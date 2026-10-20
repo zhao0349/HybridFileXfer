@@ -283,28 +283,22 @@ public class HFXServer extends HFXService {
     public List<RemoteFile> listClientFiles(String path) throws IOException {
         operationLock.lock();
         try {
-        ctChannel.writeShort(ControllerIdentifiers.LIST_FILES);
-        ctChannel.writeUTF(path);
-        int listSize = ctChannel.readInt();
-        if (listSize == -1) {
-            return null;
-        }
-        ArrayList<RemoteFile> remoteFiles = new ArrayList<>(listSize);
-        //| name       | path       | lastModified | size    | isDirectory |
-        //| ---------- | ---------- | ------------ | ------- | ----------- |
-        //| String:UTF | String:UTF | long:8b      | long:8b | boolean     |
-        for (int i = 0; i < listSize; i++) {
-            RemoteFile remoteFile = new RemoteFile(
-                    ctChannel.readUTF(),//name
-                    ctChannel.readUTF(),//path
-                    ctChannel.readLong(),//lastModified
-                    ctChannel.readLong(),//size
-                    ctChannel.readBoolean()//isDirectory
-            );
-            remoteFiles.add(remoteFile);
-        }
-        return remoteFiles;
-            } catch (IOException error) {
+            if (closed || ctChannel == null) throw new IOException("Not connected");
+            try (HandshakeDeadline rpcDeadline = new HandshakeDeadline(ctChannel, 30000)) {
+                ctChannel.writeShort(ControllerIdentifiers.LIST_FILES);
+                ctChannel.writeUTF(path);
+                int listSize = ctChannel.readInt();
+                if (listSize == -1) return null;
+                if (listSize < 0 || listSize > 1000000)
+                    throw new IOException("Invalid remote directory entry count");
+                ArrayList<RemoteFile> remoteFiles = new ArrayList<>(listSize);
+                for (int i = 0; i < listSize; i++) {
+                    remoteFiles.add(new RemoteFile(ctChannel.readUTF(), ctChannel.readUTF(),
+                            ctChannel.readLong(), ctChannel.readLong(), ctChannel.readBoolean()));
+                }
+                return remoteFiles;
+            }
+        } catch (IOException error) {
             connectionLost();
             throw error;
         } finally { operationLock.unlock(); }
@@ -313,10 +307,13 @@ public class HFXServer extends HFXService {
     public boolean deleteRemoteFile(String file) throws IOException {
         operationLock.lock();
         try {
-        ctChannel.writeShort(ControllerIdentifiers.DELETE_FILE);
-        ctChannel.writeUTF(file);
-        return ctChannel.readBoolean();
-            } catch (IOException error) {
+            if (closed || ctChannel == null) throw new IOException("Not connected");
+            try (HandshakeDeadline rpcDeadline = new HandshakeDeadline(ctChannel, 30000)) {
+                ctChannel.writeShort(ControllerIdentifiers.DELETE_FILE);
+                ctChannel.writeUTF(file);
+                return ctChannel.readBoolean();
+            }
+        } catch (IOException error) {
             connectionLost();
             throw error;
         } finally { operationLock.unlock(); }
@@ -325,11 +322,14 @@ public class HFXServer extends HFXService {
     public boolean createRemoteDir(String parent, String child) throws IOException {
         operationLock.lock();
         try {
-        ctChannel.writeShort(ControllerIdentifiers.MKDIR);
-        ctChannel.writeUTF(parent);
-        ctChannel.writeUTF(child);
-        return ctChannel.readBoolean();
-            } catch (IOException error) {
+            if (closed || ctChannel == null) throw new IOException("Not connected");
+            try (HandshakeDeadline rpcDeadline = new HandshakeDeadline(ctChannel, 30000)) {
+                ctChannel.writeShort(ControllerIdentifiers.MKDIR);
+                ctChannel.writeUTF(parent);
+                ctChannel.writeUTF(child);
+                return ctChannel.readBoolean();
+            }
+        } catch (IOException error) {
             connectionLost();
             throw error;
         } finally { operationLock.unlock(); }

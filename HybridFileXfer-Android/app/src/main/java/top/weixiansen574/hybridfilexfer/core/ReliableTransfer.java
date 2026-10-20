@@ -61,7 +61,7 @@ public final class ReliableTransfer {
         synchronized(summary) { summary.failedFiles++; summary.failures.add(path+": "+message); }
         result(path,"failed",message);
     }
-    private void progress(long prefix) {
+    private synchronized void progress(long prefix) {
         currentPrefix=Math.max(currentPrefix,prefix);
         TransferProgress p=new TransferProgress();
         synchronized(summary) {

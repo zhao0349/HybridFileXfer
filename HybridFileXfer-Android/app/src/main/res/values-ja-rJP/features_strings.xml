@@ -40,4 +40,5 @@
     <string name="connection_channels">接続チャネル</string>
     <string name="session_changed">接続が変更されました。メイン画面に戻り、ファイルブラウザーを開き直してください。</string>
     <string name="return_to_main">メイン画面に戻る</string>
+    <string name="wait_for_folders">転送する前に両側のフォルダーの読み込みが完了するまでお待ちください。</string>
 </resources>

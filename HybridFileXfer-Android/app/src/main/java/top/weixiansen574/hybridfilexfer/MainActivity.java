@@ -124,7 +124,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         } else if (id == R.id.to_transfer) {
             startActivityForResult(new Intent(context, TransferActivity.class), REQUEST_CODE_TRANSFER);
         } else if (id == R.id.refresh) {
-            if (!session.active) {
+            if (!session.active && netCardsAdapter != null) {
                 try {
                     netCardsAdapter.reload();
                 } catch (SocketException | UnknownHostException e) {
@@ -217,6 +217,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private void confirmStart(String secret, int port) {
+        startApproved = false;
+        requestedSecret = null;
         if (pendingStartDialog != null) pendingStartDialog.dismiss();
         android.widget.LinearLayout form = new android.widget.LinearLayout(this);
         form.setOrientation(android.widget.LinearLayout.VERTICAL);

@@ -67,7 +67,8 @@ public final class DesktopApp {
     private final AtomicInteger pendingLogCount = new AtomicInteger(), omittedLogs = new AtomicInteger();
     private final Timer progressTimer = new Timer(100, event -> { flushProgress(); flushLogs(); });
     private Preferences prefs;
-    private boolean uploading, taskFailed, transferActive, closing, disposalStarted;
+    private boolean uploading, taskFailed, transferActive, disposalStarted;
+    private volatile boolean closing;
     private long taskStarted, lastTransferredBytes;
     private String taskResult = "", sessionSecret = "";
     private volatile AdbBridge auxiliaryAdb;
@@ -306,6 +307,7 @@ public final class DesktopApp {
         String selected = selectedDevice();
         refresh.setEnabled(false);
         utility.submit(() -> {
+            if (closing) return;
             try (AdbBridge adb = new AdbBridge(false)) {
                 auxiliaryAdb = adb;
                 List<AdbBridge.Device> found = adb.devices();
@@ -336,12 +338,13 @@ public final class DesktopApp {
         final boolean burstEnabled = burst.isSelected();
         openPhone.setEnabled(false);
         utility.submit(() -> {
+            if (closing) return;
             try (AdbBridge adb = new AdbBridge(burstEnabled)) {
                 auxiliaryAdb = adb;
                 AdbBridge.Device device = ConnectionController.selectDevice(adb.devices(), selected);
                 adb.launchPhone(device.serial, code, serverPort);
                 ui(() -> updateState(ConnectionController.State.IDLE, text("手机 App 已打开，请在手机上确认，然后点击连接。", "Phone app opened. Confirm on the phone, then connect.")));
-            } catch (Exception e) { ui(() -> showError(e)); }
+            } catch (Exception e) { ui(() -> { if (!closing) showError(e); }); }
             finally { auxiliaryAdb = null; ui(() -> openPhone.setEnabled(!controller.isRunning() && mode.getSelectedIndex() == 0)); }
         });
     }

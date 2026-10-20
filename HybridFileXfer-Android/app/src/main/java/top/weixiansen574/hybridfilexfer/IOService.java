@@ -22,7 +22,11 @@ public class IOService extends Service {
 
     @Override
     public void onDestroy() {
-        service.destroy();
+        super.onDestroy();
+        // This Android service always runs in the dedicated :IOService process.
+        // Termination releases any staged-file locks after an interrupted Binder call.
+        // libsu hosts RootIOService separately and owns its own process shutdown.
+        if (service != null) service.destroy();
     }
 
     public static synchronized Shizuku.UserServiceArgs getUserServiceArgs(Context context){

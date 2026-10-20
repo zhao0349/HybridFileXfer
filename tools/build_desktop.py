@@ -121,7 +121,7 @@ def main():
              "--java-options", "-Dfile.encoding=UTF-8"])
         documentation = image_dir / "Documentation"
         documentation.mkdir()
-        for path in (ROOT / "LICENSE", ROOT / "README.md", ROOT / "HybridFileXfer-PC/DESKTOP.md"):
+        for path in (ROOT / "LICENSE.txt", ROOT / "README.md", ROOT / "HybridFileXfer-PC/DESKTOP.md"):
             if path.is_file():
                 shutil.copy2(path, documentation / path.name)
         platform = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")

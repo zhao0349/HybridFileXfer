@@ -31,7 +31,14 @@ public class IOServiceImpl extends IIOService.Stub {
                     try {
                         if (replace) android.system.Os.rename(source.getPath(), target.getPath());
                         else NativeMemory.moveNoReplace(source.getPath(), target.getPath());
-                    } catch (android.system.ErrnoException e) { throw new IOException(e); }
+                    } catch (android.system.ErrnoException e) {
+                        throw new IOException(e);
+                    } catch (LinkageError e) {
+                        // Privileged user-service ClassLoaders can lack the APK native path.
+                        // Fail the commit and retain its verified staging file. Never replace
+                        // this with a check-then-rename that could overwrite another file.
+                        throw new IOException("Safe file publication is unavailable in this I/O process", e);
+                    }
                 }
             };
 

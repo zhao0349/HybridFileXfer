@@ -122,6 +122,10 @@ public class TransferActivity extends AppCompatActivity implements TransferSessi
     }
 
     private void confirmTransfer(boolean upload, List<RemoteFile> files, Directory local, Directory remote) {
+        if (!leftRVAdapter.isDirectoryReady() || !rightRVAdapter.isDirectoryReady()) {
+            Toast.makeText(this, R.string.wait_for_folders, Toast.LENGTH_LONG).show();
+            return;
+        }
         if (server != HFXServer.instance) {
             Toast.makeText(this, R.string.session_changed, Toast.LENGTH_LONG).show();
             finish();
@@ -154,6 +158,11 @@ public class TransferActivity extends AppCompatActivity implements TransferSessi
         new AlertDialog.Builder(this).setTitle(R.string.que_ren_chuan_shu).setView(form)
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.ok, (dialog, which) -> {
+                    if (server != HFXServer.instance) {
+                        Toast.makeText(this, R.string.session_changed, Toast.LENGTH_LONG).show();
+                        finish();
+                        return;
+                    }
                     top.weixiansen574.hybridfilexfer.core.TransferOptions options = new top.weixiansen574.hybridfilexfer.core.TransferOptions();
                     top.weixiansen574.hybridfilexfer.core.TransferOptions.ConflictPolicy[] policies = {
                         top.weixiansen574.hybridfilexfer.core.TransferOptions.ConflictPolicy.KEEP_BOTH,

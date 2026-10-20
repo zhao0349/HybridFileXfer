@@ -42,4 +42,6 @@
     <string name="return_to_main">返回主界面</string>
     <string name="wait_for_folders">请等待两侧目录成功加载后再传输。</string>
     <string name="transfer_cleanup_warnings">清理警告：%1$d（已完成文件仍计为成功）</string>
+    <string name="channel_task_upload">正在上传：%1$s\n字节 %2$d–%3$d，共 %4$d 字节</string>
+    <string name="channel_task_download">正在下载：%1$s\n字节 %2$d–%3$d，共 %4$d 字节</string>
 </resources>

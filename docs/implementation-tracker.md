@@ -75,6 +75,16 @@ remaining hardware checks; an unrun check is never reported as passed.
   result is recorded in the PR.
 - Desktop visual smoke uses generated UI data, checks window close/reopen and
   worker cleanup, and deliberately avoids ADB or a real phone.
+- Desktop feedback checks cover light/dark switching without losing inputs or
+  transfer state, keyboard focus contrast, Chinese log glyphs and copying,
+  caret-free read-only output, and the original logo's pixel identity.
+  The native Windows save dialog was exercised with cancellation and a synthetic
+  Chinese filename; the exported text was read back as UTF-8.
+- Protocol 400 now reports the actual file, direction and assigned byte range
+  for each busy data channel. Loopback regression checks cover both directions,
+  resumed ranges, channel failure, cancellation and terminal idle cleanup.
+  Android channel-state tests cover terminal-state and late-callback handling;
+  the updated phone UI still needs to be checked on a real device.
 - A local benchmark using one 64 MiB file and 200 x 16 KiB files completed with
   SHA-256 and encryption enabled on 1, 2 and 4 loopback channels, with no failed
   files. It is a software/workload check, not a phone-performance claim.

@@ -29,6 +29,7 @@ public final class ReliableTransfer {
     private volatile Thread owner;
     private volatile boolean finished;
     private final List<Thread> liveWorkers=new CopyOnWriteArrayList<>();
+    private final Map<TransferConnection,Long> channelTasks=new IdentityHashMap<>();
     private final TransferSummary summary = new TransferSummary();
     private TransferOptions options;
     private long totalBytes=-1,totalFiles=-1;
@@ -52,12 +53,29 @@ public final class ReliableTransfer {
         for (TransferConnection c:connections) close(c.channel);
         Thread t=owner;
         if (t!=null && t!=Thread.currentThread()) t.interrupt();
+        for (TransferConnection c:connections) channelIdle(c);
         fs.cancelPendingOperations();
     }
     private void checkCancelled() throws IOException {
         if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new IOException("Transfer cancelled");
     }
     private void notifySafely(Runnable action) { try { action.run(); } catch (RuntimeException ignored) { /* UI failure must not corrupt the wire. */ } }
+    private void channelTask(TransferConnection channel,String path,boolean upload,long offset,long length,long size) {
+        synchronized(channelTasks) {
+            if (cancelled.get() || finished) return;
+            long now=System.nanoTime();
+            Long previous=channelTasks.get(channel);
+            if (previous!=null && now-previous<TimeUnit.MILLISECONDS.toNanos(100)) return;
+            channelTasks.put(channel,now);
+            notifySafely(() -> callback.onChannelTask(channel.iName,path,upload,offset,length,size));
+        }
+    }
+    private void channelIdle(TransferConnection channel) {
+        synchronized(channelTasks) {
+            if (channelTasks.remove(channel)!=null)
+                notifySafely(() -> callback.onChannelIdle(channel.iName));
+        }
+    }
     private void phase(String phase) { notifySafely(() -> callback.onPhase(phase)); }
     private void result(String path,String status,String message) { notifySafely(() -> callback.onFileResult(path,status,message)); }
     private void failed(String path,String message) {
@@ -118,6 +136,7 @@ public final class ReliableTransfer {
         summary.cancelled=cancelled.get();
         long elapsed=Math.max(0,System.currentTimeMillis()-started);
         for (TransferConnection connection:connections) {
+            channelIdle(connection);
             top.weixiansen574.hybridfilexfer.core.bean.TrafficInfo traffic=connection.getTotalTraffic();
             long bytes=upload?traffic.uploadTraffic:traffic.downloadTraffic;
             notifySafely(() -> callback.onChannelComplete(connection.iName,bytes,elapsed));
@@ -380,6 +399,7 @@ public final class ReliableTransfer {
     }
     private void channelFailure(TransferConnection c,Exception e) {
         close(c.channel);
+        channelIdle(c);
         notifySafely(() -> callback.onChannelError(c.iName,TransferFileCallback.ERROR_TYPE_EXCEPTION,e.toString()));
     }
     private static String shortMessage(String message) { return message.length()>4000?message.substring(0,4000):message; }
@@ -405,6 +425,7 @@ public final class ReliableTransfer {
     private boolean sendBlocks(int id,FileChannel input,long start,long size) throws IOException {
         List<TransferConnection> active=active();
         if (active.isEmpty()) return start==size;
+        final String taskPath=currentPath;
         Scheduler scheduler=new Scheduler(start,size,active.size());
         List<Thread> threads=new ArrayList<>();
         for (TransferConnection c:active) {
@@ -414,6 +435,7 @@ public final class ReliableTransfer {
                 try {
                     while ((chunk=scheduler.take())!=null) {
                         checkCancelled();
+                        channelTask(c,taskPath,true,chunk.offset,chunk.length,size);
                         buffer.clear(); buffer.limit(chunk.length);
                         try { readFully(input,buffer,chunk.offset); }
                         catch (IOException e) { scheduler.abort(e.toString()); chunk=null; break; }
@@ -446,7 +468,7 @@ public final class ReliableTransfer {
                 } catch (Exception e) {
                     scheduler.retire(chunk);
                     channelFailure(c,e);
-                } finally { buffers.offer(buffer); liveWorkers.remove(Thread.currentThread()); }
+                } finally { channelIdle(c); buffers.offer(buffer); liveWorkers.remove(Thread.currentThread()); }
             },"HFX-send-"+c.iName);
             thread.setDaemon(true); threads.add(thread); liveWorkers.add(thread); thread.start();
         }
@@ -455,6 +477,7 @@ public final class ReliableTransfer {
     }
     private void receiveBlocks(int id,ReceiveState state) throws IOException {
         List<Thread> threads=new ArrayList<>();
+        final String taskPath=currentPath;
         for (TransferConnection c:active()) {
             Thread thread=new Thread(() -> {
                 ByteBuffer buffer=takeBuffer();
@@ -473,6 +496,7 @@ public final class ReliableTransfer {
                             if (command!=BLOCK) throw new IOException("Unknown data command");
                             long offset=c.channel.readLong(); int length=c.channel.readInt();
                             state.validate(offset,length);
+                            channelTask(c,taskPath,false,offset,length,state.size);
                             byte[] expected=new byte[32]; c.channel.readFully(expected);
                             buffer.clear(); buffer.limit(length); c.channel.readFully(buffer); buffer.flip();
                             java.security.MessageDigest digest=TransferHashes.digest();
@@ -487,7 +511,7 @@ public final class ReliableTransfer {
                         }
                     }
                 } catch (Exception e) { channelFailure(c,e); }
-                finally { buffers.offer(buffer); liveWorkers.remove(Thread.currentThread()); }
+                finally { channelIdle(c); buffers.offer(buffer); liveWorkers.remove(Thread.currentThread()); }
             },"HFX-receive-"+c.iName);
             thread.setDaemon(true); threads.add(thread); liveWorkers.add(thread); thread.start();
         }

@@ -18,6 +18,7 @@ public final class ClientSession {
     public static final class Channel {
         public String event = "";
         public long uploadSpeed, downloadSpeed;
+        private final ChannelTaskState taskState = new ChannelTaskState();
     }
     private static ClientSession instance;
     public static synchronized ClientSession get(Context context) {
@@ -29,6 +30,7 @@ public final class ClientSession {
     private DroidHFXClient client;
     private Listener listener;
     private int generation;
+    private boolean transferRunning;
     private String lastTransferReport = "";
     public boolean active;
     public boolean connecting;
@@ -50,6 +52,7 @@ public final class ClientSession {
         active = true;
         connecting = true;
         lastTransferReport = "";
+        transferRunning = false;
         channels.clear();
         state(context.getString(R.string.starting_io_service));
         try {
@@ -68,7 +71,11 @@ public final class ClientSession {
                     @Override public void onConnectSuccess(List<String> names) {
                         if (!current()) return;
                         connecting = false;
-                        for (String name : names) channels.put(name, new Channel());
+                        for (String name : names) {
+                            Channel channel = new Channel();
+                            channel.event = TransferSession.channelText(context, channel.taskState);
+                            channels.put(name, channel);
+                        }
                         state(context.getString(R.string.waiting_for_tasks));
                         runClient(attempt);
                     }
@@ -108,69 +115,106 @@ public final class ClientSession {
     private void runClient(int attempt) {
         new ClientTask(new ClientTask.Callback() {
             private boolean current() { return generation == attempt && active; }
-            private void event(String name, String message) {
-                if (!current()) return;
-                Channel channel = channels.get(name);
-                if (channel != null) channel.event = message;
+            private Channel channel(String name) {
+                return current() && transferRunning ? channels.get(name) : null;
+            }
+            private void updateChannel(Channel channel) {
+                channel.event = TransferSession.channelText(context, channel.taskState);
                 changed();
             }
-            @Override public void onReceiving() {
-                if (current()) {
-                    lastTransferReport = "";
-                    state(context.getString(R.string.zheng_zai_jie_shou_wen_jian));
+            private void beginTransfer(int message) {
+                if (!current()) return;
+                transferRunning = true;
+                lastTransferReport = "";
+                for (Channel channel : channels.values()) {
+                    channel.taskState.begin();
+                    channel.event = TransferSession.channelText(context, channel.taskState);
+                    channel.uploadSpeed = channel.downloadSpeed = 0;
                 }
+                state(context.getString(message));
+            }
+            @Override public void onReceiving() {
+                beginTransfer(R.string.zheng_zai_jie_shou_wen_jian);
             }
             @Override public void onSending() {
-                if (current()) {
-                    lastTransferReport = "";
-                    state(context.getString(R.string.zheng_zai_fa_song_wen_jian));
-                }
+                beginTransfer(R.string.zheng_zai_fa_song_wen_jian);
             }
             @Override public void onExit() { if (current()) stop(); }
             @Override public void onFileUploading(String name, String path, long size, long total) {
-                event(name, "↑ " + path + " " + Utils.formatFileSize(size) + "/" + Utils.formatFileSize(total));
+                Channel channel = channel(name);
+                if (channel == null || !channel.taskState.task(path, true, 0, size, total)) return;
+                channel.event = "↑ " + path + " " + Utils.formatFileSize(size) + "/" + Utils.formatFileSize(total);
+                changed();
             }
             @Override public void onFileDownloading(String name, String path, long size, long total) {
-                event(name, "↓ " + path + " " + Utils.formatFileSize(size) + "/" + Utils.formatFileSize(total));
+                Channel channel = channel(name);
+                if (channel == null || !channel.taskState.task(path, false, 0, size, total)) return;
+                channel.event = "↓ " + path + " " + Utils.formatFileSize(size) + "/" + Utils.formatFileSize(total);
+                changed();
+            }
+            @Override public void onChannelTask(String name, String path, boolean upload,
+                                                long offset, long length, long fileSize) {
+                Channel channel = channel(name);
+                if (channel != null && channel.taskState.task(path, upload, offset, length, fileSize)) {
+                    updateChannel(channel);
+                }
+            }
+            @Override public void onChannelIdle(String name) {
+                Channel channel = channel(name);
+                if (channel != null && channel.taskState.idle()) updateChannel(channel);
             }
             @Override public void onSpeedInfo(List<TrafficInfo> traffic) {
-                if (!current()) return;
+                if (!current() || !transferRunning) return;
                 for (TrafficInfo info : traffic) {
                     Channel channel = channels.get(info.iName);
                     if (channel != null) {
-                        channel.uploadSpeed = info.uploadTraffic;
-                        channel.downloadSpeed = info.downloadTraffic;
+                        boolean finished = channel.taskState.kind() == ChannelTaskState.Kind.COMPLETE
+                                || channel.taskState.kind() == ChannelTaskState.Kind.ERROR;
+                        channel.uploadSpeed = finished ? 0 : info.uploadTraffic;
+                        channel.downloadSpeed = finished ? 0 : info.downloadTraffic;
                     }
                 }
                 changed();
             }
             @Override public void onChannelComplete(String name, long traffic, long time) {
-                event(name, context.getString(R.string.transfer_completed, Utils.formatSpeed(traffic * 1000 / Math.max(1, time))));
+                Channel channel = channel(name);
+                if (channel != null && channel.taskState.complete(context.getString(R.string.transfer_completed,
+                        Utils.formatSpeed(traffic * 1000 / Math.max(1, time))))) {
+                    channel.uploadSpeed = channel.downloadSpeed = 0;
+                    updateChannel(channel);
+                }
             }
-            @Override public void onChannelError(String name, int type, String message) { event(name, message); }
-            @Override public void onReadFileError(String message) { if (current()) state(message); }
-            @Override public void onWriteFileError(String message) { if (current()) state(message); }
+            @Override public void onChannelError(String name, int type, String message) {
+                Channel channel = channel(name);
+                if (channel != null && channel.taskState.error(message)) {
+                    channel.uploadSpeed = channel.downloadSpeed = 0;
+                    updateChannel(channel);
+                }
+            }
+            @Override public void onReadFileError(String message) { if (current() && transferRunning) state(message); }
+            @Override public void onWriteFileError(String message) { if (current() && transferRunning) state(message); }
             @Override public void onComplete(boolean upload, long traffic, long time) {
-                if (!current()) return;
-                for (Channel channel : channels.values()) channel.uploadSpeed = channel.downloadSpeed = 0;
+                if (!current() || !transferRunning) return;
+                endTransfer();
                 state((upload ? "↑ " : "↓ ") + Utils.formatFileSize(traffic) + " · " + Utils.formatTime(time)
                         + "\n" + lastTransferReport);
             }
             @Override public void onProgress(top.weixiansen574.hybridfilexfer.core.TransferProgress progress) {
-                if (current()) state(Utils.formatFileSize(progress.transferredBytes) + " / "
+                if (current() && transferRunning) state(Utils.formatFileSize(progress.transferredBytes) + " / "
                         + (progress.totalBytes < 0 ? "?" : Utils.formatFileSize(progress.totalBytes))
                         + " · " + progress.completedFiles + " / " + (progress.totalFiles < 0 ? "?" : progress.totalFiles)
                         + "\n" + progress.currentPath);
             }
-            @Override public void onPhase(String phase) { if (current()) state(phase); }
+            @Override public void onPhase(String phase) { if (current() && transferRunning) state(phase); }
             @Override public void onSummary(top.weixiansen574.hybridfilexfer.core.TransferSummary summary) {
-                if (!current()) return;
+                if (!current() || !transferRunning) return;
                 lastTransferReport = TransferSession.formatSummary(context, summary);
                 LocalHistory.transfer(context, lastTransferReport);
             }
             @Override public void onIncomplete() {
-                if (current()) state(context.getString(R.string.chuan_shu_shi_fa_sheng_yi_chang)
-                        + "\n" + lastTransferReport);
+                if (!current() || !transferRunning) return;
+                endTransfer();
+                state(context.getString(R.string.chuan_shu_shi_fa_sheng_yi_chang) + "\n" + lastTransferReport);
             }
             @Override public void onComplete() {
                 // This is task completion, distinct from one completed transfer above.
@@ -180,12 +224,21 @@ public final class ClientSession {
         }, client).execute();
     }
 
+    private void endTransfer() {
+        transferRunning = false;
+        for (Channel channel : channels.values()) {
+            channel.taskState.end();
+            channel.event = TransferSession.channelText(context, channel.taskState);
+            channel.uploadSpeed = channel.downloadSpeed = 0;
+        }
+    }
+
     private void fail(String message) { stop(); state(message); }
     public void stop() {
         generation++;
         active = false;
         connecting = false;
-        for (Channel channel : channels.values()) channel.uploadSpeed = channel.downloadSpeed = 0;
+        endTransfer();
         if (client != null) {
             client.close();
             client = null;

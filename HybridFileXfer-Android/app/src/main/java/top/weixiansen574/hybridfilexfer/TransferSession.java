@@ -37,6 +37,8 @@ public final class TransferSession implements BTransferFileCallback {
     private final HFXServer server;
     private final String source, destination;
     private Listener listener;
+    private final Map<String, ChannelTaskState> channelStates = new LinkedHashMap<>();
+    private boolean cancelling;
     private final long startedAt = android.os.SystemClock.elapsedRealtime();
     public final boolean upload;
     public final List<String> channelNames;
@@ -56,40 +58,117 @@ public final class TransferSession implements BTransferFileCallback {
         source = upload ? local.path : remote.path;
         destination = upload ? remote.path : local.path;
         channelNames = server.getConnectionListINames();
+        for (String name : channelNames) {
+            ChannelTaskState channel = new ChannelTaskState();
+            channel.begin();
+            channelStates.put(name, channel);
+            events.put(name, channelText(context, channel));
+        }
     }
     public void attach(Listener listener) { this.listener = listener; changed(); }
     public void detach(Listener listener) { if (this.listener == listener) this.listener = null; }
     private void changed() { if (listener != null) listener.onTransferChanged(); }
     public void cancel() {
-        if (running) {
+        if (running && !cancelling) {
+            cancelling = true;
+            endChannels();
             status = context.getString(R.string.cancelling_transfer);
             server.cancelTransfer();
             changed();
         }
     }
     @Override public void onFileUploading(String name, String path, long size, long total) {
+        ChannelTaskState channel = channelStates.get(name);
+        if (channel == null || !channel.task(path, true, 0, size, total)) return;
         events.put(name, "↑ " + path + " · " + Utils.formatFileSize(size) + "/" + Utils.formatFileSize(total));
         changed();
     }
     @Override public void onFileDownloading(String name, String path, long size, long total) {
+        ChannelTaskState channel = channelStates.get(name);
+        if (channel == null || !channel.task(path, false, 0, size, total)) return;
         events.put(name, "↓ " + path + " · " + Utils.formatFileSize(size) + "/" + Utils.formatFileSize(total));
         changed();
     }
-    @Override public void onSpeedInfo(List<TrafficInfo> speeds) { this.speeds = new ArrayList<>(speeds); changed(); }
-    @Override public void onChannelComplete(String name, long traffic, long time) {
-        events.put(name, Utils.formatSpeed(traffic * 1000 / Math.max(1, time))); changed();
+    @Override public void onChannelTask(String name, String path, boolean upload,
+                                        long offset, long length, long fileSize) {
+        ChannelTaskState channel = channelStates.get(name);
+        if (channel != null && channel.task(path, upload, offset, length, fileSize)) updateChannel(name, channel);
     }
-    @Override public void onChannelError(String name, int type, String message) { events.put(name, message); changed(); }
-    @Override public void onReadFileError(String message) { status = message; changed(); }
-    @Override public void onWriteFileError(String message) { status = message; changed(); }
-    @Override public void onProgress(TransferProgress progress) { this.progress = progress; changed(); }
-    @Override public void onPhase(String phase) { status = phase; changed(); }
+    @Override public void onChannelIdle(String name) {
+        ChannelTaskState channel = channelStates.get(name);
+        if (channel != null && channel.idle()) updateChannel(name, channel);
+    }
+    @Override public void onSpeedInfo(List<TrafficInfo> speeds) {
+        if (!running || cancelling) return;
+        this.speeds = new ArrayList<>();
+        for (TrafficInfo speed : speeds) {
+            ChannelTaskState channel = channelStates.get(speed.iName);
+            if (channel == null) continue;
+            boolean finished = channel.kind() == ChannelTaskState.Kind.COMPLETE
+                    || channel.kind() == ChannelTaskState.Kind.ERROR;
+            this.speeds.add(new TrafficInfo(speed.iName,
+                    finished ? 0 : speed.uploadTraffic, finished ? 0 : speed.downloadTraffic));
+        }
+        changed();
+    }
+    @Override public void onChannelComplete(String name, long traffic, long time) {
+        ChannelTaskState channel = channelStates.get(name);
+        if (channel != null && channel.complete(context.getString(R.string.transfer_completed,
+                Utils.formatSpeed(traffic * 1000 / Math.max(1, time))))) updateChannel(name, channel);
+    }
+    @Override public void onChannelError(String name, int type, String message) {
+        ChannelTaskState channel = channelStates.get(name);
+        if (channel != null && channel.error(message)) updateChannel(name, channel);
+    }
+    private void updateChannel(String name, ChannelTaskState channel) {
+        events.put(name, channelText(context, channel));
+        if (channel.kind() == ChannelTaskState.Kind.COMPLETE || channel.kind() == ChannelTaskState.Kind.ERROR) {
+            List<TrafficInfo> updatedSpeeds = new ArrayList<>();
+            for (TrafficInfo speed : speeds) {
+                if (!name.equals(speed.iName)) updatedSpeeds.add(speed);
+            }
+            updatedSpeeds.add(new TrafficInfo(name, 0, 0));
+            speeds = updatedSpeeds;
+        }
+        changed();
+    }
+    private void endChannels() {
+        speeds = new ArrayList<>();
+        for (Map.Entry<String, ChannelTaskState> entry : channelStates.entrySet()) {
+            entry.getValue().end();
+            events.put(entry.getKey(), channelText(context, entry.getValue()));
+            speeds.add(new TrafficInfo(entry.getKey(), 0, 0));
+        }
+    }
+    static String channelText(Context context, ChannelTaskState channel) {
+        if (channel.kind() == ChannelTaskState.Kind.TASK) {
+            ChannelTaskState.Task task = channel.task();
+            return context.getString(task.upload ? R.string.channel_task_upload : R.string.channel_task_download,
+                    task.path, task.firstByte(), task.lastByte(), task.fileSize);
+        }
+        return channel.kind() == ChannelTaskState.Kind.IDLE
+                ? context.getString(R.string.dang_qian_wu_ren_wu) : channel.message();
+    }
+    @Override public void onReadFileError(String message) { if (running && !cancelling) { status = message; changed(); } }
+    @Override public void onWriteFileError(String message) { if (running && !cancelling) { status = message; changed(); } }
+    @Override public void onProgress(TransferProgress progress) {
+        if (!running || cancelling) return;
+        this.progress = progress;
+        changed();
+    }
+    @Override public void onPhase(String phase) { if (running && !cancelling) { status = phase; changed(); } }
     @Override public void onFileResult(String path, String result, String message) {
+        if (!running || cancelling) return;
         status = result + ": " + path + (message == null || message.isEmpty() ? "" : "\n" + message);
         changed();
     }
-    @Override public void onSummary(TransferSummary summary) { this.summary = summary; changed(); }
+    @Override public void onSummary(TransferSummary summary) {
+        if (!running) return;
+        this.summary = summary;
+        changed();
+    }
     @Override public void onComplete(boolean upload, long traffic, long time) {
+        if (!running) return;
         this.traffic = traffic;
         elapsed = time;
         finish(context.getString(R.string.transfer_finished));
@@ -118,6 +197,7 @@ public final class TransferSession implements BTransferFileCallback {
     private void finish(String message) {
         if (!running) return;
         running = false;
+        endChannels();
         if (summary != null) traffic = summary.transferredBytes;
         else if (progress != null) traffic = progress.transferredBytes;
         if (elapsed == 0) elapsed = android.os.SystemClock.elapsedRealtime() - startedAt;

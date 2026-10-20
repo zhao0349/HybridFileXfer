@@ -17,6 +17,15 @@ public final class TransferReliabilityTest {
     private static int passed;
     private static boolean encrypt;
     private static final int MB=1024*1024;
+    private static final class TaskReport {
+        final String channel,path;
+        final boolean upload;
+        final long offset,length,size;
+        TaskReport(String channel,String path,boolean upload,long offset,long length,long size) {
+            this.channel=channel; this.path=path; this.upload=upload;
+            this.offset=offset; this.length=length; this.size=size;
+        }
+    }
     private static final class Observer implements TransferFileCallback {
         final List<String> states=new CopyOnWriteArrayList<>();
         volatile TransferSummary summary;
@@ -25,23 +34,43 @@ public final class TransferReliabilityTest {
         final Map<String,Long> channelBytes=new ConcurrentHashMap<>();
         volatile int completedChannels;
         volatile boolean validChannelCallbacks=true;
+        final List<TaskReport> taskReports=new CopyOnWriteArrayList<>();
+        final Set<String> activeTasks=ConcurrentHashMap.newKeySet();
+        volatile boolean validTaskLifecycle=true;
         Runnable progressHook;
         @Override public void onProgress(TransferProgress p) {
             progress=p;
             if(progressHook!=null) progressHook.run();
             if(throwCallbacks) throw new IllegalStateException("Synthetic UI failure");
         }
-        @Override public void onSummary(TransferSummary s) { summary=s; }
+        @Override public void onSummary(TransferSummary s) {
+            if(!activeTasks.isEmpty()) validTaskLifecycle=false;
+            summary=s;
+        }
         @Override public void onFileResult(String path,String status,String message) { states.add(status+":"+path); }
         @Override public void onFileUploading(String i,String p,long n,long t) {}
         @Override public void onFileDownloading(String i,String p,long n,long t) {}
+        @Override public void onChannelTask(String name,String path,boolean upload,long offset,long length,long size) {
+            if(summary!=null || path==null || path.isEmpty() || offset<0 || length<=0 || length>MB
+                    || offset>size-length) validTaskLifecycle=false;
+            taskReports.add(new TaskReport(name,path,upload,offset,length,size));
+            activeTasks.add(name);
+            if(throwCallbacks) throw new IllegalStateException("Synthetic task UI failure");
+        }
+        @Override public void onChannelIdle(String name) {
+            activeTasks.remove(name);
+            if(throwCallbacks) throw new IllegalStateException("Synthetic idle UI failure");
+        }
         @Override public void onSpeedInfo(List<TrafficInfo> t) {}
         @Override public void onChannelComplete(String i,long n,long t) {
             if (summary!=null || n<0 || t<0 || channelBytes.put(i,n)!=null) validChannelCallbacks=false;
+            if(activeTasks.contains(i)) validTaskLifecycle=false;
             completedChannels++;
             if(throwCallbacks) throw new IllegalStateException("Synthetic channel UI failure");
         }
-        @Override public void onChannelError(String i,int t,String m) {}
+        @Override public void onChannelError(String i,int t,String m) {
+            if(activeTasks.contains(i)) validTaskLifecycle=false;
+        }
         @Override public void onReadFileError(String m) {}
         @Override public void onWriteFileError(String m) {}
         @Override public void onComplete(boolean u,long n,long t) {}
@@ -167,6 +196,13 @@ public final class TransferReliabilityTest {
                         "Each channel must complete once before the transfer summary");
                 check(endpoint.channelBytes.values().stream().mapToLong(Long::longValue).sum()==5L*MB+137,
                         "Final per-channel byte totals use the wrong transfer direction");
+                check(endpoint.taskReports.stream().map(task->task.channel).distinct().count()==3,
+                        "Active transfer channels never reported their actual file task");
+                check(endpoint.taskReports.stream().allMatch(task->task.path.equals("large.bin")
+                                && task.size==5L*MB+137 && task.upload==(endpoint==r.sender)),
+                        "Channel task described the wrong file, direction, or size");
+                check(endpoint.activeTasks.isEmpty() && endpoint.validTaskLifecycle,
+                        "Channel tasks were not cleared before completion");
             }
         } finally { cleanup(source); cleanup(target); }
     }
@@ -178,6 +214,9 @@ public final class TransferReliabilityTest {
                     c->new Limited(c,16384,MB/3),new JdkTransferFileAccess());
             check(r.sent.failedFiles==0 && r.received.failedFiles==0,"One failed channel aborted whole transfer");
             check(identical(source.resolve("file.bin"),target.resolve("file.bin")),"Fallback result differs");
+            check(r.sender.validTaskLifecycle && r.receiver.validTaskLifecycle
+                            && r.sender.activeTasks.isEmpty() && r.receiver.activeTasks.isEmpty(),
+                    "A retired fallback channel retained a stale task");
         } finally { cleanup(source); cleanup(target); }
     }
     private static void stalledChannelTimeout() throws Exception {
@@ -226,6 +265,8 @@ public final class TransferReliabilityTest {
             else {
                 check(completed.sent.resumedBytes>=MB,"Persistent restart did not reuse verified bytes");
                 check(completed.sent.transferredBytes<Files.size(file),"Resume retransmitted the whole file");
+                check(completed.sender.taskReports.stream().allMatch(task->task.offset>=completed.sent.resumedBytes),
+                        "Resumed channel task reported a block from the already verified prefix");
             }
         } finally { cleanup(source); cleanup(target); }
     }
@@ -270,6 +311,10 @@ public final class TransferReliabilityTest {
             check(r.received.failedFiles==1 && r.received.completedFiles==1,"Per-file storage failure was not isolated");
             check(Arrays.equals(Files.readAllBytes(target.resolve("bad.bin")),new byte[]{9,8,7}),"Disk error damaged old destination");
             check(identical(source.resolve("good.bin"),target.resolve("good.bin")),"Following file did not transfer");
+            check(r.receiver.taskReports.stream().anyMatch(task->task.path.equals("bad.bin"))
+                            && r.receiver.taskReports.stream().anyMatch(task->task.path.equals("good.bin"))
+                            && r.receiver.validTaskLifecycle && r.receiver.activeTasks.isEmpty(),
+                    "Next file did not replace the failed file's channel task");
         } finally { cleanup(source); cleanup(target); }
     }
     private static void sourceMutation() throws Exception {
@@ -394,6 +439,8 @@ public final class TransferReliabilityTest {
             boolean workers=Thread.getAllStackTraces().keySet().stream().anyMatch(t->t.isAlive()
                     && (t.getName().startsWith("HFX-send-") || t.getName().startsWith("HFX-receive-")));
             check(!workers,"Transfer workers survived cancellation");
+            check(!observer.taskReports.isEmpty() && observer.activeTasks.isEmpty() && observer.validTaskLifecycle,
+                    "Cancellation left an active channel task or emitted a late task");
         } finally {
             if(sender!=null) sender.cancel(); if(receiver!=null) receiver.cancel();
             control.close(); data.close(); pool.shutdownNow(); pool.awaitTermination(5,TimeUnit.SECONDS);

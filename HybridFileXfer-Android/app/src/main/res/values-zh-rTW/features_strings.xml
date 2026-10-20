@@ -42,6 +42,6 @@
     <string name="return_to_main">返回主介面</string>
     <string name="wait_for_folders">請等待兩側目錄成功載入後再傳輸。</string>
     <string name="transfer_cleanup_warnings">清理警告：%1$d（已完成檔案仍計為成功）</string>
-    <string name="channel_task_upload">正在上傳：%1$s\n位元組 %2$d–%3$d，共 %4$d 位元組</string>
-    <string name="channel_task_download">正在下載：%1$s\n位元組 %2$d–%3$d，共 %4$d 位元組</string>
+    <string name="channel_task_upload">正在上傳：%1$s\n分塊 %2$d / %3$d</string>
+    <string name="channel_task_download">正在下載：%1$s\n分塊 %2$d / %3$d</string>
 </resources>

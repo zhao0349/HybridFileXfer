@@ -39,6 +39,15 @@
         <service android:name=".RootIOService" android:exported="false" tools:ignore="Instantiatable" />
         <service android:name=".SessionService" android:exported="false" android:foregroundServiceType="dataSync" />
 
+        <!-- Intentionally exported for adb shell content call. Every entry point checks
+             the Binder UID (shell 2000 or root 0 only); no URI grants or file access. -->
+        <provider
+            android:name=".AdbPairingProvider"
+            android:authorities="${applicationId}.adb-pairing"
+            android:exported="true"
+            android:grantUriPermissions="false"
+            tools:ignore="ExportedContentProvider" />
+
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

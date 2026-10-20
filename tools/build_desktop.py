@@ -65,11 +65,7 @@ def package_icon(classes):
          "top.weixiansen574.hybridfilexfer.desktop.DesktopIconExporter", icons], timeout=20)
     png = icons / "HybridFileXfer-256.png"
     if sys.platform == "win32":
-        data = png.read_bytes()
-        icon = icons / "HybridFileXfer.ico"
-        icon.write_bytes(struct.pack("<HHH", 0, 1, 1)
-                         + struct.pack("<BBBBHHII", 0, 0, 0, 0, 1, 32, len(data), 22) + data)
-        return icon
+        return icons / "HybridFileXfer.ico"
     if sys.platform == "darwin":
         chunks = b""
         for kind, size in ((b"ic08", 256), (b"ic09", 512)):
@@ -223,6 +219,9 @@ def main():
             header = struct.unpack_from("<I", pe, 0x3c)[0]
             if pe[header:header+4] != b"PE\0\0" or struct.unpack_from("<H", pe, header+24+68)[0] != 2:
                 raise RuntimeError("Packaged Windows launcher is not a GUI executable")
+            from verify_windows_icon import verify_windows_icon
+            for frame in verify_windows_icon(executable, icon):
+                print("Verified native EXE icon: {size}px SHA256={sha256}".format(**frame), flush=True)
         elif sys.platform == "darwin":
             executable = image_dir / "HybridFileXfer.app/Contents/MacOS/HybridFileXfer"
         else:

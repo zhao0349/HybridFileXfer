@@ -1,5 +1,7 @@
 package top.weixiansen574.hybridfilexfer;
 
+import top.weixiansen574.hybridfilexfer.core.FileBlock;
+
 /** Main-thread channel state, kept separate from Android views and translated text. */
 final class ChannelTaskState {
     enum Kind { IDLE, TASK, COMPLETE, ERROR }
@@ -17,8 +19,17 @@ final class ChannelTaskState {
             this.fileSize = fileSize;
         }
 
-        long firstByte() { return length == 0 ? offset : offset + 1; }
-        long lastByte() { return offset + length; }
+        long blockNumber() {
+            return offset == fileSize ? blockCount() : offset / FileBlock.BLOCK_SIZE + 1;
+        }
+
+        long blockCount() {
+            // A resumed prefix may end inside a block. Count its complete blocks, then the
+            // actual protocol blocks starting at that prefix; do not invent an extra tail block.
+            long remaining = fileSize - offset;
+            return offset / FileBlock.BLOCK_SIZE + remaining / FileBlock.BLOCK_SIZE
+                    + (remaining % FileBlock.BLOCK_SIZE == 0 ? 0 : 1);
+        }
     }
 
     private boolean accepting;
@@ -39,6 +50,13 @@ final class ChannelTaskState {
         task = new Task(path, upload, offset, length, fileSize);
         message = "";
         return true;
+    }
+
+    boolean taskEndingAt(String path, boolean upload, long targetSize, long fileSize) {
+        // Legacy callbacks supply the block's end position, not a completed-block counter.
+        if (targetSize < 0) return false;
+        long offset = targetSize == 0 ? 0 : (targetSize - 1) / FileBlock.BLOCK_SIZE * FileBlock.BLOCK_SIZE;
+        return task(path, upload, offset, targetSize - offset, fileSize);
     }
 
     boolean idle() {

@@ -14,8 +14,14 @@ The header, window and packaged application use the original author's logo.
 Open the desktop first, choose USB/ADB or a phone network address, and choose a
 computer folder. **Wait & connect** keeps the window available until the phone is
 ready. In ADB mode the app can open the Android app and request pairing; accept
-the request and permissions on the phone. For network mode, enter the pairing
-code displayed on the phone. Use matching desktop and Android versions.
+the request and permissions on the phone. With the pairing field empty, ADB
+reads the current phone session's code and port regardless of which app started
+first; a retry refreshes both after a phone-side restart. Explicitly entered
+codes are retained. The read-only phone endpoint permits only authorized ADB
+shell/root UIDs, exposes no code for stopped or connected sessions, and never
+starts a service itself. For network mode, enter the pairing code displayed on
+the phone. Use matching desktop and Android builds; older phone builds require
+a manually entered code.
 
 File selection remains in the phone's two-pane browser. The desktop displays
 confirmed progress, per-channel speed, cancellation, the final summary, and
@@ -51,6 +57,7 @@ java -jar HybridFileXfer.jar -c 192.168.1.2 --port 5740 --pairing-code-file code
 ```
 
 `--wait` retries with a delay capped at 15 seconds. Ctrl+C stops it.
+In ADB mode, omitting a code uses the current phone session automatically.
 Authentication and protocol-version errors stop automatic retries so the user
 can correct them. The GUI's Stop button cancels waiting, a pending handshake,
 or an established connection without closing the application.

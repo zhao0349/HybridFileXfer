@@ -42,6 +42,6 @@
     <string name="return_to_main">メイン画面に戻る</string>
     <string name="wait_for_folders">転送する前に両側のフォルダーの読み込みが完了するまでお待ちください。</string>
     <string name="transfer_cleanup_warnings">後処理の警告: %1$d（完了したファイルは成功として扱います）</string>
-    <string name="channel_task_upload">アップロード中：%1$s\n%2$d–%3$d バイト（全 %4$d バイト）</string>
-    <string name="channel_task_download">ダウンロード中：%1$s\n%2$d–%3$d バイト（全 %4$d バイト）</string>
+    <string name="channel_task_upload">アップロード中：%1$s\nブロック %2$d / %3$d</string>
+    <string name="channel_task_download">ダウンロード中：%1$s\nブロック %2$d / %3$d</string>
 </resources>

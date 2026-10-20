@@ -16,6 +16,14 @@ import top.weixiansen574.hybridfilexfer.droidcore.callback.StartServerCallback;
 public final class ServerSession {
     public interface Listener { void onSessionChanged(); }
     private static ServerSession instance;
+    // Main-thread lifecycle changes publish a complete immutable snapshot for Binder
+    // readers. Reading it must not create a session or access mutable UI fields.
+    private static volatile AdbPairingState adbPairingState = AdbPairingState.idle();
+
+    static String adbPairingPayload(int uid) {
+        return adbPairingState.payloadForCaller(uid);
+    }
+
     public static synchronized ServerSession get(Context context) {
         if (instance == null) instance = new ServerSession(context.getApplicationContext());
         return instance;
@@ -49,6 +57,7 @@ public final class ServerSession {
     public void start(int mode, int port, String secret, List<ServerNetInterface> selected,
                       int localBuffers, int remoteBuffers) {
         if (active) return;
+        AdbPairingState approvedPairing = AdbPairingState.ready(port, secret);
         active = true;
         connected = false;
         pairingSecret = secret;
@@ -62,6 +71,9 @@ public final class ServerSession {
             fail(context.getString(R.string.io_start_failed) + "\n" + e.getMessage());
             return;
         }
+        // The user has approved this start. A desktop may discover its code while
+        // IO is starting, then retry the normal authenticated transport connection.
+        adbPairingState = approvedPairing;
         notifyChanged();
         connector.bind(mode, new IoServiceConnector.Callback() {
             @Override public void onReady(IIOService io) {
@@ -102,6 +114,7 @@ public final class ServerSession {
                     }
                     @Override public void onConnectSuccess() {
                         if (!current()) return;
+                        adbPairingState = adbPairingState.connected();
                         connected = true;
                         HFXServer.instance = server;
                         message = context.getString(R.string.yi_lian_jie);
@@ -125,6 +138,8 @@ public final class ServerSession {
     }
 
     public void stop() {
+        // Revoke lookup before any potentially blocking transport/service cleanup.
+        adbPairingState = adbPairingState.stopped();
         generation++;
         HFXServer closing = server;
         server = null;

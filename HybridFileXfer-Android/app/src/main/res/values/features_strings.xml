@@ -42,6 +42,6 @@
     <string name="return_to_main">Return to main screen</string>
     <string name="wait_for_folders">Wait for both folders to load successfully before transferring.</string>
     <string name="transfer_cleanup_warnings">Cleanup warnings: %1$d (completed files remain successful)</string>
-    <string name="channel_task_upload">Uploading: %1$s\nBytes %2$d–%3$d of %4$d</string>
-    <string name="channel_task_download">Downloading: %1$s\nBytes %2$d–%3$d of %4$d</string>
+    <string name="channel_task_upload">Uploading: %1$s\nBlock %2$d / %3$d</string>
+    <string name="channel_task_download">Downloading: %1$s\nBlock %2$d / %3$d</string>
 </resources>

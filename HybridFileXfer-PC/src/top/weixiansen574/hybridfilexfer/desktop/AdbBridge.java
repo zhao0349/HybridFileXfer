@@ -14,7 +14,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /** Owns only the processes and port forwards created by this connection attempt. */
-public final class AdbBridge implements AutoCloseable {
+public final class AdbBridge implements AutoCloseable, AdbPairingSession.Phone {
     public static final class Device {
         public final String serial, state, name;
         public Device(String serial, String state, String name) {
@@ -78,6 +78,19 @@ public final class AdbBridge implements AutoCloseable {
         return allocated;
     }
 
+    @Override public AdbPairingSession.Snapshot readPairing(String device) throws IOException, InterruptedException {
+        List<String> args = deviceArgs(device);
+        args.addAll(Arrays.asList("shell", "content", "call", "--uri",
+                "content://top.weixiansen574.hybridfilexfer.adb-pairing", "--method", "current"));
+        String output;
+        try { output = run(10000, args.toArray(new String[0])); }
+        catch (IOException error) {
+            // A failing adb/content process may echo a Bundle containing the code.
+            throw AdbPairingSession.unavailable();
+        }
+        return AdbPairingSession.parse(output);
+    }
+
     public void launchPhone(String device, String secret, int serverPort) throws IOException, InterruptedException {
         List<String> args = deviceArgs(device);
         args.addAll(Arrays.asList("shell", "am", "start", "-n",
@@ -87,7 +100,11 @@ public final class AdbBridge implements AutoCloseable {
                 "--ei", "server_port", String.valueOf(serverPort)));
         // These extras cross adb shell: pairing secrets deliberately have no shell metacharacters.
         if (!secret.matches("[A-Za-z0-9_-]{6,128}")) throw new IOException("Pairing code must contain 6–128 letters, digits, '_' or '-'.");
-        String output = run(10000, args.toArray(new String[0]));
+        String output;
+        try { output = run(10000, args.toArray(new String[0])); }
+        catch (IOException error) {
+            throw new IOException("Cannot open the phone app. Check USB authorization and install the matching Android version.");
+        }
         if (output.contains("Error:") || output.contains("Exception")) throw new IOException("Cannot open the phone app. Install the matching Android version.");
     }
 

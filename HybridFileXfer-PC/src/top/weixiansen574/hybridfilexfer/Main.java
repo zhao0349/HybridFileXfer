@@ -32,9 +32,7 @@ public final class Main {
             String environmentCode = System.getenv("HFX_PAIRING_CODE");
             if (environmentCode != null) options.secret = environmentCode.trim();
         }
-        if (options.secret.isEmpty() && options.launchPhone && "adb".equals(options.connect))
-            options.secret = ConnectionController.newPairingSecret();
-        if (options.secret.isEmpty() && System.console() != null) {
+        if (options.secret.isEmpty() && !"adb".equals(options.connect) && System.console() != null) {
             char[] code = System.console().readPassword("Phone pairing code: ");
             if (code != null) { options.secret = new String(code).trim(); java.util.Arrays.fill(code, '\0'); }
         }
@@ -79,6 +77,7 @@ public final class Main {
                 + "      --local-port PORT      ADB local port; 0 automatically allocates a free port\n"
                 + "      --pairing-code CODE    Phone code (also HFX_PAIRING_CODE environment variable)\n"
                 + "      --pairing-code-file F  Read a UTF-8 file, keeping the code out of process arguments\n"
+                + "                             ADB reads the current phone code automatically when omitted\n"
                 + "      --launch-phone         Ask the phone to open and confirm a connection via ADB\n"
                 + "      --wait                 Wait/reconnect with bounded backoff; Ctrl+C stops\n"
                 + "      --adb-burst            Experimental ADB_BURST_MODE=1 for our ADB subprocesses\n"

@@ -30,6 +30,7 @@ public final class ConnectionController implements AutoCloseable {
     public interface Listener {
         default void onState(State state, String message) { }
         default void onLog(String message) { }
+        default void onPairing(String secret, int port) { }
         default void onChannels(List<String> channels) { }
         default void onSpeed(List<TrafficInfo> traffic) { }
         default void onTransferStarted(boolean upload) { }
@@ -63,8 +64,9 @@ public final class ConnectionController implements AutoCloseable {
             Path path = Paths.get(directory);
             if (!directory.equals("/") && (!Files.isDirectory(path) || !Files.isWritable(path)))
                 throw new IllegalArgumentException(text("请选择存在且可写入的电脑文件夹。", "Choose an existing writable folder."));
-            if (secret.isEmpty()) throw new IllegalArgumentException(text("请输入手机显示的配对码，或选择通过 ADB 打开手机 App。", "Enter the phone pairing code, or enable opening the phone app through ADB."));
-            Pairing.validateSecret(secret);
+            if (secret.isEmpty() && !"adb".equals(address))
+                throw new IllegalArgumentException(text("请输入手机显示的配对码。", "Enter the phone pairing code."));
+            if (!secret.isEmpty()) Pairing.validateSecret(secret);
         }
     }
     private static final class Attempt {
@@ -73,7 +75,7 @@ public final class ConnectionController implements AutoCloseable {
         volatile AdbBridge adb;
         volatile Thread worker;
         volatile boolean transferActive, terminalFailure, failed;
-        String launchedDevice;
+        AdbPairingSession pairing;
         final CountDownLatch done = new CountDownLatch(1);
     }
     private final Listener listener;
@@ -85,10 +87,15 @@ public final class ConnectionController implements AutoCloseable {
         new SecureRandom().nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
-    public synchronized void start(Settings settings) {
+    public void start(Settings settings) { start(settings, null); }
+
+    /** Reuse a phone-start request made by the GUI while its confirmation is pending. */
+    synchronized void start(Settings settings, AdbPairingSession preparation) {
         settings.validate();
         if (current != null && current.done.getCount() != 0) throw new IllegalStateException("A connection is already active.");
         Attempt attempt = new Attempt();
+        attempt.pairing = preparation == null
+                ? new AdbPairingSession(settings.secret, settings.remotePort) : preparation;
         current = attempt;
         Thread worker = new Thread(() -> work(attempt, settings), "hfx-connection");
         worker.setDaemon(true);
@@ -100,7 +107,10 @@ public final class ConnectionController implements AutoCloseable {
     }
     private void log(Settings settings, String message) {
         if (message == null) return;
-        listener.onLog(settings.secret.isEmpty() ? message : message.replace(settings.secret, "[redacted]"));
+        if (!settings.secret.isEmpty()) message = message.replace(settings.secret, "[redacted]");
+        Attempt attempt = current;
+        if (attempt != null) message = message.replace(attempt.pairing.secret(), "[redacted]");
+        listener.onLog(message);
     }
     private void work(Attempt attempt, Settings settings) {
         int retry = 0;
@@ -109,25 +119,26 @@ public final class ConnectionController implements AutoCloseable {
                 attempt.terminalFailure = false;
                 try {
                     String host = settings.address;
-                    int controlPort = settings.remotePort, adbPort = 0;
+                    String secret = settings.secret;
+                    int remotePort = settings.remotePort, controlPort = remotePort, adbPort = 0;
                     if ("adb".equals(host)) {
                         state(attempt, State.WAITING, text("等待 USB 设备授权，请在手机上允许 USB 调试。", "Waiting for a USB device. Allow USB debugging on the phone."));
                         attempt.adb = new AdbBridge(settings.burst);
                         List<AdbBridge.Device> devices = attempt.adb.devices();
                         AdbBridge.Device selected = selectDevice(devices, settings.device);
-                        if (settings.launchPhone && !selected.serial.equals(attempt.launchedDevice)) {
-                            attempt.adb.launchPhone(selected.serial, settings.secret, settings.remotePort);
-                            attempt.launchedDevice = selected.serial;
-                            state(attempt, State.WAITING, text("已打开手机 App，请在手机确认连接和权限。", "Phone app opened. Confirm the connection and permissions on the phone."));
-                        }
-                        adbPort = attempt.adb.forward(selected.serial, settings.localPort, settings.remotePort);
+                        boolean ready = attempt.pairing.prepare(attempt.adb, selected.serial, settings.launchPhone);
+                        secret = attempt.pairing.secret();
+                        remotePort = attempt.pairing.port();
+                        listener.onPairing(secret, remotePort);
+                        if (!ready) throw new IOException(text("等待手机确认并启动服务。", "Waiting for the phone to approve and start its service."));
+                        adbPort = attempt.adb.forward(selected.serial, settings.localPort, remotePort);
                         controlPort = adbPort;
                         host = "127.0.0.1";
                     }
                     if (attempt.stopped) break;
-                    JdkHFXClient client = new JdkHFXClient(host, settings.remotePort, settings.directory);
+                    JdkHFXClient client = new JdkHFXClient(host, remotePort, settings.directory);
                     attempt.client = client;
-                    client.configureConnection(settings.secret, controlPort, adbPort, 5000);
+                    client.configureConnection(secret, controlPort, adbPort, 5000);
                     client.setTransferOptions(settings.transfer);
                     if (attempt.stopped) { client.close(); break; }
                     state(attempt, State.CONNECTING, text("正在连接手机…", "Connecting to phone…"));

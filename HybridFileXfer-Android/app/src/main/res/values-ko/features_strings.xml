@@ -42,6 +42,6 @@
     <string name="return_to_main">메인 화면으로 돌아가기</string>
     <string name="wait_for_folders">전송하기 전에 양쪽 폴더를 모두 불러올 때까지 기다리세요.</string>
     <string name="transfer_cleanup_warnings">정리 경고: %1$d (완료된 파일은 성공으로 유지됩니다)</string>
-    <string name="channel_task_upload">업로드 중: %1$s\n%2$d–%3$d바이트 (전체 %4$d바이트)</string>
-    <string name="channel_task_download">다운로드 중: %1$s\n%2$d–%3$d바이트 (전체 %4$d바이트)</string>
+    <string name="channel_task_upload">업로드 중: %1$s\n블록 %2$d / %3$d</string>
+    <string name="channel_task_download">다운로드 중: %1$s\n블록 %2$d / %3$d</string>
 </resources>

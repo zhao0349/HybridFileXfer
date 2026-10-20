@@ -84,7 +84,19 @@ remaining hardware checks; an unrun check is never reported as passed.
   for each busy data channel. Loopback regression checks cover both directions,
   resumed ranges, channel failure, cancellation and terminal idle cleanup.
   Android channel-state tests cover terminal-state and late-callback handling;
-  the updated phone UI still needs to be checked on a real device.
+  the UI formats the range as a compact block number/total, including non-aligned
+  resumed prefixes and exact-block file sizes. The updated phone UI still needs
+  to be checked on a real device.
+- ADB pairing tests cover phone-first and desktop-first startup, code/port
+  refresh after a phone restart, preserved manual codes, and actual authenticated
+  encrypted socket traffic using the selected code. The Android read-only
+  endpoint checks complete Binder UIDs (shell/root only); pure-Java tests cover
+  caller rejection and revocation when connected/stopped. OEM ADB behavior
+  remains a real-device acceptance item.
+- Windows packaging verifies all four embedded EXE icon frames against the
+  original-logo ICO (16/32/48/256 pixels). Windows native extraction and Shell
+  queries also showed the original logo. The reported old icon was not reproduced
+  for the packaged launcher; legacy source-tree launchers retain generic icons.
 - A local benchmark using one 64 MiB file and 200 x 16 KiB files completed with
   SHA-256 and encryption enabled on 1, 2 and 4 loopback channels, with no failed
   files. It is a software/workload check, not a phone-performance claim.
@@ -92,7 +104,9 @@ remaining hardware checks; an unrun check is never reported as passed.
 ## Remaining device acceptance
 
 1. Install matching preview APK and desktop build; check USB authorization,
-   direct network pairing and startup with the desktop opened first.
+   direct network pairing and both startup orders. For ADB, also test opening the
+   phone app from the desktop before clicking Connect, a changed phone port, a
+   restarted phone session, and explicitly supplied pairing codes.
 2. Test normal, Shizuku ADB/ROOT and direct su on actual supported devices,
    including denied/cancelled authorization and retry.
 3. Transfer both directions, unplug one channel, interrupt all channels, reconnect

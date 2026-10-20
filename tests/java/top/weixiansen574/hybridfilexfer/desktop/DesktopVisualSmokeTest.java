@@ -41,6 +41,7 @@ public final class DesktopVisualSmokeTest {
                 testedFrame.set(frame);
                 frame.addNotify();
                 frame.validate();
+                DesktopPairingChecks.verify(desktop);
                 Dimension normalSize = frame.getSize();
                 render(frame, destination);
                 renderAdvanced(desktop, frame, destination.resolveSibling("ui-advanced.png"));

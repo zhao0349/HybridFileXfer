@@ -142,15 +142,11 @@ public final class ClientSession {
             @Override public void onExit() { if (current()) stop(); }
             @Override public void onFileUploading(String name, String path, long size, long total) {
                 Channel channel = channel(name);
-                if (channel == null || !channel.taskState.task(path, true, 0, size, total)) return;
-                channel.event = "↑ " + path + " " + Utils.formatFileSize(size) + "/" + Utils.formatFileSize(total);
-                changed();
+                if (channel != null && channel.taskState.taskEndingAt(path, true, size, total)) updateChannel(channel);
             }
             @Override public void onFileDownloading(String name, String path, long size, long total) {
                 Channel channel = channel(name);
-                if (channel == null || !channel.taskState.task(path, false, 0, size, total)) return;
-                channel.event = "↓ " + path + " " + Utils.formatFileSize(size) + "/" + Utils.formatFileSize(total);
-                changed();
+                if (channel != null && channel.taskState.taskEndingAt(path, false, size, total)) updateChannel(channel);
             }
             @Override public void onChannelTask(String name, String path, boolean upload,
                                                 long offset, long length, long fileSize) {

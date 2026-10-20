@@ -1,10 +1,13 @@
 package top.weixiansen574.hybridfilexfer;
 
 import org.junit.Test;
+import top.weixiansen574.hybridfilexfer.core.FileBlock;
 
 import static org.junit.Assert.*;
 
 public class ChannelTaskStateTest {
+    private static final long BLOCK_SIZE = FileBlock.BLOCK_SIZE;
+
     @Test public void recordsActualAssignedRangeAndDirection() {
         ChannelTaskState channel = new ChannelTaskState();
         channel.begin();
@@ -12,8 +15,10 @@ public class ChannelTaskStateTest {
         assertEquals(ChannelTaskState.Kind.TASK, channel.kind());
         assertEquals("synthetic/first.bin", channel.task().path);
         assertTrue(channel.task().upload);
-        assertEquals(1048577, channel.task().firstByte());
-        assertEquals(1572864, channel.task().lastByte());
+        assertEquals(1048576, channel.task().offset);
+        assertEquals(524288, channel.task().length);
+        assertEquals(2, channel.task().blockNumber());
+        assertEquals(4, channel.task().blockCount());
         assertEquals(4194304, channel.task().fileSize);
         assertTrue(channel.task("synthetic/second.bin", false, 0, 8, 8));
         assertFalse(channel.task().upload);
@@ -102,11 +107,15 @@ public class ChannelTaskStateTest {
         channel.begin();
         long offset = 5L * 1024 * 1024 * 1024 * 1024;
         assertTrue(channel.task("synthetic/large.bin", false, offset, 16, offset + 16));
-        assertEquals(offset + 1, channel.task().firstByte());
-        assertEquals(offset + 16, channel.task().lastByte());
+        assertEquals(offset, channel.task().offset);
+        assertEquals(16, channel.task().length);
+        assertEquals(offset / BLOCK_SIZE + 1, channel.task().blockNumber());
+        assertEquals(offset / BLOCK_SIZE + 1, channel.task().blockCount());
         assertTrue(channel.task("synthetic/limit.bin", true, Long.MAX_VALUE - 1, 1, Long.MAX_VALUE));
-        assertEquals(Long.MAX_VALUE, channel.task().firstByte());
-        assertEquals(Long.MAX_VALUE, channel.task().lastByte());
+        assertEquals(Long.MAX_VALUE - 1, channel.task().offset);
+        assertEquals(1, channel.task().length);
+        assertEquals(Long.MAX_VALUE / BLOCK_SIZE + 1, channel.task().blockNumber());
+        assertEquals(Long.MAX_VALUE / BLOCK_SIZE + 1, channel.task().blockCount());
         assertFalse(channel.task("synthetic/overflow.bin", true, Long.MAX_VALUE, 1, Long.MAX_VALUE));
         assertEquals("synthetic/limit.bin", channel.task().path);
     }
@@ -122,5 +131,56 @@ public class ChannelTaskStateTest {
         assertFalse(channel.task("synthetic/invalid.bin", true, 9, 0, 8));
         assertFalse(channel.task("synthetic/invalid.bin", true, 4, 8, 8));
         assertEquals("synthetic/file.bin", channel.task().path);
+    }
+
+    @Test public void blockCountsHandleExactMultiplesShortTailsAndEmptyFiles() {
+        ChannelTaskState channel = new ChannelTaskState();
+        channel.begin();
+        assertTrue(channel.task("synthetic/exact.bin", true, 0, BLOCK_SIZE, 2 * BLOCK_SIZE));
+        assertEquals(1, channel.task().blockNumber());
+        assertEquals(2, channel.task().blockCount());
+        assertTrue(channel.task("synthetic/exact.bin", true, BLOCK_SIZE, BLOCK_SIZE, 2 * BLOCK_SIZE));
+        assertEquals(2, channel.task().blockNumber());
+        assertEquals(2, channel.task().blockCount());
+        assertTrue(channel.task("synthetic/tail.bin", false, 2 * BLOCK_SIZE, 17, 2 * BLOCK_SIZE + 17));
+        assertEquals(3, channel.task().blockNumber());
+        assertEquals(3, channel.task().blockCount());
+        assertTrue(channel.task("synthetic/empty.bin", false, 0, 0, 0));
+        assertEquals(0, channel.task().blockNumber());
+        assertEquals(0, channel.task().blockCount());
+    }
+
+    @Test public void nonAlignedResumeCountsActualRemainingBlocksAndKeepsRetryNumber() {
+        ChannelTaskState channel = new ChannelTaskState();
+        channel.begin();
+        long start = BLOCK_SIZE + BLOCK_SIZE / 2;
+        long size = 3 * BLOCK_SIZE + BLOCK_SIZE / 4;
+        assertTrue(channel.task("synthetic/resume.bin", true, start, BLOCK_SIZE, size));
+        // One complete prefix block plus two actual remaining protocol blocks.
+        assertEquals(2, channel.task().blockNumber());
+        assertEquals(3, channel.task().blockCount());
+        assertTrue(channel.task("synthetic/resume.bin", true, start + BLOCK_SIZE,
+                size - start - BLOCK_SIZE, size));
+        assertEquals(3, channel.task().blockNumber());
+        assertEquals(3, channel.task().blockCount());
+        assertTrue(channel.task("synthetic/resume.bin", true, start, BLOCK_SIZE, size));
+        assertEquals(2, channel.task().blockNumber());
+        assertEquals(3, channel.task().blockCount());
+    }
+
+    @Test public void legacyCallbacksConvertBlockEndPositionsWithoutAddingATailBlock() {
+        ChannelTaskState channel = new ChannelTaskState();
+        channel.begin();
+        assertTrue(channel.taskEndingAt("synthetic/legacy.bin", true, 2 * BLOCK_SIZE, 3 * BLOCK_SIZE));
+        assertEquals(BLOCK_SIZE, channel.task().offset);
+        assertEquals(BLOCK_SIZE, channel.task().length);
+        assertEquals(2, channel.task().blockNumber());
+        assertEquals(3, channel.task().blockCount());
+        assertFalse(channel.taskEndingAt("synthetic/invalid.bin", true, -1, 3 * BLOCK_SIZE));
+        assertFalse(channel.taskEndingAt("synthetic/invalid.bin", true, 3 * BLOCK_SIZE + 1, 3 * BLOCK_SIZE));
+        assertEquals("synthetic/legacy.bin", channel.task().path);
+        assertTrue(channel.taskEndingAt("synthetic/empty.bin", false, 0, 0));
+        assertEquals(0, channel.task().blockNumber());
+        assertEquals(0, channel.task().blockCount());
     }
 }

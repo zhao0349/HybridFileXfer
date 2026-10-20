@@ -79,15 +79,11 @@ public final class TransferSession implements BTransferFileCallback {
     }
     @Override public void onFileUploading(String name, String path, long size, long total) {
         ChannelTaskState channel = channelStates.get(name);
-        if (channel == null || !channel.task(path, true, 0, size, total)) return;
-        events.put(name, "↑ " + path + " · " + Utils.formatFileSize(size) + "/" + Utils.formatFileSize(total));
-        changed();
+        if (channel != null && channel.taskEndingAt(path, true, size, total)) updateChannel(name, channel);
     }
     @Override public void onFileDownloading(String name, String path, long size, long total) {
         ChannelTaskState channel = channelStates.get(name);
-        if (channel == null || !channel.task(path, false, 0, size, total)) return;
-        events.put(name, "↓ " + path + " · " + Utils.formatFileSize(size) + "/" + Utils.formatFileSize(total));
-        changed();
+        if (channel != null && channel.taskEndingAt(path, false, size, total)) updateChannel(name, channel);
     }
     @Override public void onChannelTask(String name, String path, boolean upload,
                                         long offset, long length, long fileSize) {
@@ -144,7 +140,7 @@ public final class TransferSession implements BTransferFileCallback {
         if (channel.kind() == ChannelTaskState.Kind.TASK) {
             ChannelTaskState.Task task = channel.task();
             return context.getString(task.upload ? R.string.channel_task_upload : R.string.channel_task_download,
-                    task.path, task.firstByte(), task.lastByte(), task.fileSize);
+                    task.path, task.blockNumber(), task.blockCount());
         }
         return channel.kind() == ChannelTaskState.Kind.IDLE
                 ? context.getString(R.string.dang_qian_wu_ren_wu) : channel.message();

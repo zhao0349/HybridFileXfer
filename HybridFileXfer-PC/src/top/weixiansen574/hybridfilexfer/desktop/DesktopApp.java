@@ -80,9 +80,13 @@ public final class DesktopApp {
     private boolean uploading, taskFailed, transferActive, disposalStarted;
     private volatile boolean closing;
     private long taskStarted, lastTransferredBytes;
-    private String taskResult = "", sessionSecret = "";
+    private String taskResult = "", sessionSecret = "", automaticSecret = "";
     private volatile AdbBridge auxiliaryAdb;
     private int refreshGeneration;
+    private int phoneRequestGeneration;
+    private boolean phoneRequestInFlight;
+    private AdbPairingSession pendingPhonePairing;
+    private String pendingPhoneDevice;
 
     public static void launch(LaunchOptions options) {
         if (GraphicsEnvironment.isHeadless()) throw new IllegalStateException("No desktop display is available. Use --cli -c adb or --help.");
@@ -105,6 +109,9 @@ public final class DesktopApp {
             @Override public void onLog(String message) {
                 if (pendingLogCount.incrementAndGet() <= 1000) pendingLogs.add(message);
                 else { pendingLogCount.decrementAndGet(); omittedLogs.incrementAndGet(); }
+            }
+            @Override public void onPairing(String secret, int serverPort) {
+                ui(() -> displayPairing(secret, serverPort));
             }
             @Override public void onChannels(List<String> names) { ui(() -> { channels.setRowCount(0); for (String name : names) channels.addRow(new Object[]{name, "0 B/s", "0 B/s"}); }); }
             @Override public void onSpeed(List<TrafficInfo> values) {
@@ -514,10 +521,12 @@ public final class DesktopApp {
         form.add(component, c);
     }
     private void modeChanged() {
+        phoneRequestGeneration++;
+        pendingPhonePairing = null;
         boolean adb = mode.getSelectedIndex() == 0;
         ((CardLayout) endpointCards.getLayout()).show(endpointCards, adb ? "adb" : "network");
         endpointLabel.setText(adb ? text("USB 设备", "USB device") : text("手机网络地址", "Phone network address"));
-        devices.setEnabled(adb); refresh.setEnabled(adb); openPhone.setEnabled(adb);
+        devices.setEnabled(adb); refresh.setEnabled(adb); openPhone.setEnabled(adb && !phoneRequestInFlight);
         openPhone.setVisible(adb);
         launchPhone.setEnabled(adb); address.setEnabled(!adb); localPort.setEnabled(adb); burst.setEnabled(adb);
         pairing.putClientProperty("JTextField.placeholderText", adb
@@ -526,7 +535,7 @@ public final class DesktopApp {
     }
     private void setBusy(boolean busy) {
         for (JComponent control : connectionControls) control.setEnabled(!busy);
-        connect.setEnabled(!busy); stop.setEnabled(busy);
+        connect.setEnabled(!busy && !phoneRequestInFlight); stop.setEnabled(busy);
         if (!busy) { modeChanged(); cancelTransfer.setEnabled(false); }
     }
     private String selectedDevice() {
@@ -535,14 +544,22 @@ public final class DesktopApp {
     }
     private String obtainSecret() {
         String secret = new String(pairing.getPassword()).trim();
-        if (secret.isEmpty() && mode.getSelectedIndex() == 0 && launchPhone.isSelected()) {
-            secret = ConnectionController.newPairingSecret();
-            pairing.setText(secret);
-        }
         sessionSecret = secret;
+        // Displaying the last automatically acquired code must not turn it into a
+        // manual override on the next connection (the phone may have restarted).
+        if (mode.getSelectedIndex() == 0 && secret.equals(automaticSecret)) return "";
         return secret;
     }
+    private void displayPairing(String secret, int serverPort) {
+        String entered = new String(pairing.getPassword()).trim();
+        if (entered.isEmpty() || entered.equals(automaticSecret)) automaticSecret = secret;
+        pairing.setText(secret);
+        sessionSecret = secret;
+        port.setValue(serverPort);
+    }
     private void begin() {
+        if (phoneRequestInFlight) return;
+        phoneRequestGeneration++;
         try {
             port.commitEdit(); localPort.commitEdit();
             TransferOptions transfer = new TransferOptions();
@@ -554,11 +571,15 @@ public final class DesktopApp {
                     selectedDevice(), directory.getText().trim(), obtainSecret(), (Integer) port.getValue(),
                     (Integer) localPort.getValue(), reconnect.isSelected(), mode.getSelectedIndex() == 0 && launchPhone.isSelected(), burst.isSelected(), transfer);
             settings.validate();
+            AdbPairingSession preparation = "adb".equals(settings.address) && settings.secret.isEmpty()
+                    && pendingPhonePairing != null && pendingPhonePairing.port() == settings.remotePort
+                    && java.util.Objects.equals(pendingPhoneDevice, settings.device) ? pendingPhonePairing : null;
+            pendingPhonePairing = null;
             try {
                 if (prefs != null) { prefs.put("directory", settings.directory); prefs.put("address", address.getText().trim()); }
             } catch (SecurityException e) { appendLog(text("无法保存设置，本次连接仍可继续。", "Settings could not be saved; this connection can still continue.")); }
             setBusy(true);
-            controller.start(settings);
+            controller.start(settings, preparation);
         } catch (Exception e) { setBusy(false); showError(e); }
     }
     private void refreshDevices() {
@@ -589,25 +610,54 @@ public final class DesktopApp {
         });
     }
     private void requestPhone() {
+        if (phoneRequestInFlight || controller.isRunning()) return;
         try { port.commitEdit(); }
         catch (java.text.ParseException error) { showError(error); return; }
         String selected = selectedDevice();
         String secret = obtainSecret();
-        if (secret.isEmpty()) { secret = ConnectionController.newPairingSecret(); pairing.setText(secret); sessionSecret = secret; }
         final String code = secret;
         final int serverPort = (Integer) port.getValue();
+        final int generation = ++phoneRequestGeneration;
+        final String enteredCode = new String(pairing.getPassword());
+        final String enteredPort = port.getText();
         final boolean burstEnabled = burst.isSelected();
+        phoneRequestInFlight = true;
         openPhone.setEnabled(false);
+        connect.setEnabled(false);
         utility.submit(() -> {
             if (closing) return;
             try (AdbBridge adb = new AdbBridge(burstEnabled)) {
                 auxiliaryAdb = adb;
                 AdbBridge.Device device = ConnectionController.selectDevice(adb.devices(), selected);
-                adb.launchPhone(device.serial, code, serverPort);
-                ui(() -> updateState(ConnectionController.State.IDLE, text("手机 App 已打开，请在手机上确认，然后点击连接。", "Phone app opened. Confirm on the phone, then connect.")));
-            } catch (Exception e) { ui(() -> { if (!closing) showError(e); }); }
-            finally { auxiliaryAdb = null; ui(() -> openPhone.setEnabled(!controller.isRunning() && mode.getSelectedIndex() == 0)); }
+                AdbPairingSession preparation = new AdbPairingSession(code, serverPort);
+                boolean ready = preparation.prepare(adb, device.serial, true);
+                ui(() -> {
+                    if (!phoneRequestCurrent(generation, selected, enteredCode, enteredPort)) return;
+                    if (code.isEmpty()) {
+                        pendingPhonePairing = preparation;
+                        pendingPhoneDevice = selected;
+                    }
+                    displayPairing(preparation.secret(), preparation.port());
+                    updateState(ConnectionController.State.IDLE, ready && code.isEmpty()
+                            ? text("已读取手机当前配对信息，点击连接即可。", "Current phone pairing is ready. Click Connect.")
+                            : text("手机 App 已打开，请在手机上确认，然后点击连接。", "Phone app opened. Confirm on the phone, then connect."));
+                });
+            } catch (Exception e) { ui(() -> {
+                if (phoneRequestCurrent(generation, selected, enteredCode, enteredPort)) showError(e);
+            }); }
+            finally { auxiliaryAdb = null; ui(() -> {
+                phoneRequestInFlight = false;
+                if (!closing) {
+                    connect.setEnabled(!controller.isRunning());
+                    openPhone.setEnabled(!controller.isRunning() && mode.getSelectedIndex() == 0);
+                }
+            }); }
         });
+    }
+    private boolean phoneRequestCurrent(int generation, String selected, String enteredCode, String enteredPort) {
+        return !closing && generation == phoneRequestGeneration && !controller.isRunning()
+                && mode.getSelectedIndex() == 0 && java.util.Objects.equals(selected, selectedDevice())
+                && enteredCode.equals(new String(pairing.getPassword())) && enteredPort.equals(port.getText());
     }
     private void chooseFolder() {
         JFileChooser chooser = new JFileChooser(directory.getText());
@@ -775,7 +825,7 @@ public final class DesktopApp {
         disposalStarted = true;
         progressTimer.stop();
         themeMonitor.close();
-        pairing.setText(""); sessionSecret = "";
+        pairing.setText(""); sessionSecret = ""; automaticSecret = "";
         // Drain queued local history writes before removing the last AWT window.
         utility.submit(() -> SwingUtilities.invokeLater(frame::dispose));
         utility.shutdown();

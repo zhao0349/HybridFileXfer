@@ -3,6 +3,8 @@
 The packaged `HybridFileXfer` application opens a desktop window without a
 console. The package includes its Java runtime. A standalone JAR can be started
 with `java -jar HybridFileXfer.jar`; Java 8 or newer is required.
+The FlatLaf interface uses consistent flat controls and rounded cards across
+platforms. The UI library is included in both the standalone JAR and app image.
 
 Open the desktop first, choose USB/ADB or a phone network address, and choose a
 computer folder. **Wait & connect** keeps the window available until the phone is
@@ -48,6 +50,10 @@ or an established connection without closing the application.
 ## Verification
 
 `python tools/build_desktop.py --test --package` builds and tests the app.
+The first build downloads FlatLaf 3.7.2 from Maven Central and verifies its pinned
+SHA-256; later builds use `.tools/dependencies`. Its Apache license is included.
+Run the build once before opening the desktop module in IntelliJ so that its
+library path is available; use the Python build for distribution packages.
 `DesktopRegressionTest` covers CLI validation, locale fallback, device selection,
 retry bounds, cancellation during a silent handshake, reuse after cancellation,
 and local history. `DesktopVisualSmokeTest` skips on headless hosts. On a desktop,

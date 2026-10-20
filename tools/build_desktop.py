@@ -1,17 +1,84 @@
 #!/usr/bin/env python3
 """Compile, test and package the desktop app using an installed JDK."""
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import re
 import platform
 import shutil
+import stat
+import struct
 import subprocess
 import sys
+import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / ".build"
+FLATLAF_VERSION = "3.7.2"
+FLATLAF_SHA256 = "917aff3963c88d797d0fd9b9ccbd70f7681c101df9d11c59e2bc7a3a6c0fabf4"
+
+
+def flatlaf_dependency():
+    name = "flatlaf-" + FLATLAF_VERSION + ".jar"
+    cached = ROOT / ".tools" / "dependencies" / name
+    if cached.exists():
+        data = cached.read_bytes()
+    else:
+        url = "https://repo.maven.apache.org/maven2/com/formdev/flatlaf/" + FLATLAF_VERSION + "/" + name
+        print("Downloading pinned UI dependency:", url, flush=True)
+        with urllib.request.urlopen(url, timeout=30) as response:
+            data = response.read(5 * 1024 * 1024 + 1)
+    if len(data) > 5 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != FLATLAF_SHA256:
+        raise RuntimeError("FlatLaf dependency checksum mismatch: " + str(cached))
+    if not cached.exists():
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        cached.write_bytes(data)
+    return cached
+
+
+def bundle_flatlaf(dependency, classes):
+    # Keep the standalone JAR self-contained, including native resources,
+    # Java 9+ implementations, and the dependency's original Apache license.
+    with zipfile.ZipFile(dependency) as archive:
+        for entry in archive.infolist():
+            if entry.is_dir() or entry.filename in ("META-INF/MANIFEST.MF", "module-info.class"):
+                continue
+            target = classes / entry.filename
+            if not target.resolve().is_relative_to(classes.resolve()):
+                raise RuntimeError("Invalid dependency archive path")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(archive.read(entry))
+    shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.txt", classes / "META-INF" / "THIRD_PARTY_NOTICES.txt")
+
+
+def package_icon(classes):
+    icon_classes = BUILD / "icon-classes"
+    reset_directory(icon_classes)
+    compile_java([ROOT / "tools/java/top/weixiansen574/hybridfilexfer/desktop/DesktopIconExporter.java"],
+                 icon_classes, classes)
+    icons = BUILD / "icons"
+    reset_directory(icons)
+    run([java_tool("java"), "-Djava.awt.headless=true", "-cp",
+         os.pathsep.join([str(classes), str(icon_classes)]),
+         "top.weixiansen574.hybridfilexfer.desktop.DesktopIconExporter", icons], timeout=20)
+    png = icons / "HybridFileXfer-256.png"
+    if sys.platform == "win32":
+        data = png.read_bytes()
+        icon = icons / "HybridFileXfer.ico"
+        icon.write_bytes(struct.pack("<HHH", 0, 1, 1)
+                         + struct.pack("<BBBBHHII", 0, 0, 0, 0, 1, 32, len(data), 22) + data)
+        return icon
+    if sys.platform == "darwin":
+        chunks = b""
+        for kind, size in ((b"ic08", 256), (b"ic09", 512)):
+            data = (icons / ("HybridFileXfer-" + str(size) + ".png")).read_bytes()
+            chunks += kind + struct.pack(">I", len(data) + 8) + data
+        icon = icons / "HybridFileXfer.icns"
+        icon.write_bytes(b"icns" + struct.pack(">I", len(chunks) + 8) + chunks)
+        return icon
+    return png
 
 
 def java_tool(name):
@@ -37,7 +104,16 @@ def reset_directory(path):
     if resolved == boundary or not resolved.is_relative_to(boundary) or not boundary.is_relative_to(ROOT.resolve()):
         raise RuntimeError("Refusing to remove a directory outside the build workspace")
     if path.exists():
-        shutil.rmtree(path)
+        def remove_readonly(function, failed_path, error):
+            # Windows jpackage may mark its generated launcher read-only.
+            # Only clear that attribute inside this already-validated build tree.
+            if (os.name == "nt" and isinstance(error[1], PermissionError)
+                    and not os.stat(failed_path).st_mode & stat.S_IWRITE):
+                os.chmod(failed_path, stat.S_IWRITE)
+                function(failed_path)
+            else:
+                raise error[1]
+        shutil.rmtree(path, onerror=remove_readonly)
     path.mkdir(parents=True)
 
 
@@ -47,7 +123,7 @@ def compile_java(sources, destination, classpath=None):
     if classpath:
         args += ["-cp", str(classpath)]
     args += [str(path) for path in sources]
-    arg_file = BUILD / ("javac-test.args" if classpath else "javac.args")
+    arg_file = BUILD / (destination.name + ".args")
     arg_file.write_text("\n".join('"' + str(arg).replace("\\", "/").replace('"', '\\"') + '"'
                                   for arg in args), encoding="utf-8")
     run([java_tool("javac"), "@" + str(arg_file)])
@@ -61,7 +137,9 @@ def main():
     source = ROOT / "HybridFileXfer-PC" / "src"
     classes = BUILD / "classes"
     reset_directory(classes)
-    compile_java(sorted(source.rglob("*.java")), classes)
+    dependency = flatlaf_dependency()
+    compile_java(sorted(source.rglob("*.java")), classes, dependency)
+    bundle_flatlaf(dependency, classes)
     for resource in source.rglob("*"):
         if resource.is_file() and resource.suffix in (".properties", ".png", ".ico"):
             target = classes / resource.relative_to(source)
@@ -77,6 +155,7 @@ def main():
     manifest = BUILD / "MANIFEST.MF"
     manifest.write_text("Manifest-Version: 1.0\n"
                         "Main-Class: top.weixiansen574.hybridfilexfer.Main\n"
+                        "Multi-Release: true\n"
                         "Implementation-Version: 4.0.0-preview+" + revision + ("-dirty" if dirty else "") + "\n\n",
                         encoding="utf-8")
     run([java_tool("jar"), "cfm", jar_path, manifest, "-C", classes, "."])
@@ -125,15 +204,16 @@ def main():
     if args.package:
         image_dir = BUILD / "app"
         reset_directory(image_dir)
+        icon = package_icon(classes)
         run([java_tool("jpackage"), "--type", "app-image", "--name", "HybridFileXfer",
              "--input", jar_dir, "--main-jar", jar_path.name, "--dest", image_dir,
              "--app-version", "4.0.0", "--vendor", "HybridFileXfer contributors",
+             "--icon", icon,
              "--java-options", "-Dfile.encoding=UTF-8"])
         executable = image_dir / "HybridFileXfer"
         if sys.platform == "win32":
             executable /= "HybridFileXfer.exe"
             # A console-subsystem executable would reintroduce the black CMD window.
-            import struct
             pe = executable.read_bytes()
             header = struct.unpack_from("<I", pe, 0x3c)[0]
             if pe[header:header+4] != b"PE\0\0" or struct.unpack_from("<H", pe, header+24+68)[0] != 2:
@@ -149,12 +229,14 @@ def main():
             "Source: https://github.com/zhao0349/HybridFileXfer/tree/" + revision + "\n"
             "Build contains local uncommitted changes: " + str(dirty) + "\n",
             encoding="utf-8")
-        for path in (ROOT / "LICENSE.txt", ROOT / "README.md", ROOT / "HybridFileXfer-PC/DESKTOP.md"):
+        for path in (ROOT / "LICENSE.txt", ROOT / "THIRD_PARTY_NOTICES.txt",
+                     ROOT / "README.md", ROOT / "HybridFileXfer-PC/DESKTOP.md"):
             if path.is_file():
                 target = documentation / path.relative_to(ROOT)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, target)
         shutil.copytree(ROOT / "docs", documentation / "docs")
+        shutil.copytree(ROOT / "licenses", documentation / "licenses")
         system = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
         archive = distributions / ("HybridFileXfer-4.0.0-" + system + "-" + platform.machine().lower() + ".zip")
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:

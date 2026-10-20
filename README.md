@@ -36,13 +36,13 @@
 
 ## 从源码构建
 
-桌面使用 JDK 21 或更新版本和 Python 3：
+桌面使用 JDK 21 或更新版本和 Python 3.9 或更新版本：
 
 ```text
 python tools/build_desktop.py --test --package
 ```
 
-结果在 `.build/distributions`，独立 JAR 保持 Java 8 字节码兼容。旧 Windows / 旧 Java 的运行能力不等于现代打包运行时的支持范围。
+首次构建从 Maven Central 下载并校验固定版本的 FlatLaf 界面库，之后使用本地缓存。结果在 `.build/distributions`，独立 JAR 已包含界面库，保持 Java 8 字节码兼容。旧 Windows / 旧 Java 的运行能力不等于现代打包运行时的支持范围。
 
 Android 使用 JDK 17、Android SDK 34，通过 `HybridFileXfer-Android/gradlew` 运行 `assembleDebug testDebugUnitTest lintDebug`。CI 会编译 JNI 库并生成调试 APK。调试包不是正式签名发布版；若与既有安装签名不同，不能直接覆盖安装，卸载会清除应用设置。
 
@@ -50,4 +50,4 @@ Android 使用 JDK 17、Android SDK 34，通过 `HybridFileXfer-Android/gradlew`
 
 ## 许可证与来源
 
-本项目使用 [GPL-3.0](LICENSE.txt)。原作者、历史说明及赞助信息保留在[旧版文档](docs/upstream-3.0-readme.md)。CI 桌面包使用 Eclipse Temurin Java 运行时，并保留运行时附带的许可证。本 fork 的反馈与 PR 请提交到 [zhao0349/HybridFileXfer](https://github.com/zhao0349/HybridFileXfer/pulls)。
+本项目使用 [GPL-3.0](LICENSE.txt)。原作者、历史说明及赞助信息保留在[旧版文档](docs/upstream-3.0-readme.md)。桌面界面使用 Apache-2.0 许可的 FlatLaf，详见[第三方声明](THIRD_PARTY_NOTICES.txt)。CI 桌面包使用 Eclipse Temurin Java 运行时，并保留运行时附带的许可证。本 fork 的反馈与 PR 请提交到 [zhao0349/HybridFileXfer](https://github.com/zhao0349/HybridFileXfer/pulls)。

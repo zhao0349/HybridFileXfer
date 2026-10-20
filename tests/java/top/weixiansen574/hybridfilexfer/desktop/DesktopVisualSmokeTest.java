@@ -30,12 +30,32 @@ public final class DesktopVisualSmokeTest {
         SwingUtilities.invokeAndWait(() -> {
             try {
                 DesktopApp.configureLookAndFeel();
+                if (!(UIManager.getLookAndFeel() instanceof com.formdev.flatlaf.FlatLaf))
+                    throw new AssertionError("The modern FlatLaf theme was not installed");
                 DesktopApp desktop = new DesktopApp(LaunchOptions.parse(new String[0]));
                 JFrame frame = desktop.windowForTesting();
                 testedFrame.set(frame);
                 frame.addNotify();
                 frame.validate();
+                Dimension normalSize = frame.getSize();
                 render(frame, destination);
+                JComboBox<?> mode = (JComboBox<?>) field(desktop, "mode");
+                mode.setSelectedIndex(1);
+                ((JTextField) field(desktop, "address")).setText("192.168.1.24");
+                frame.validate();
+                render(frame, destination.resolveSibling("ui-network.png"));
+                frame.setSize(960, 680); frame.validate();
+                assertVisible((JComponent) field(desktop, "connect"), "Connect in small window");
+                assertVisible((JComponent) field(desktop, "stop"), "Disconnect in small window");
+                assertVisible((JComponent) field(desktop, "cancelTransfer"), "Cancel in small window");
+                assertVisible((JComponent) field(desktop, "reconnect"), "Reconnect preference in small window");
+                assertVisible((JComponent) field(desktop, "launchPhone"), "Phone launch preference in small window");
+                render(frame, destination.resolveSibling("ui-minimum.png"));
+                JScrollPane content = (JScrollPane) field(desktop, "contentScroll");
+                content.getVerticalScrollBar().setValue(content.getVerticalScrollBar().getMaximum());
+                render(frame, destination.resolveSibling("ui-minimum-bottom.png"));
+                content.getVerticalScrollBar().setValue(0);
+                frame.setSize(normalSize); mode.setSelectedIndex(0); frame.validate();
                 Field tableField = DesktopApp.class.getDeclaredField("channels");
                 tableField.setAccessible(true);
                 DefaultTableModel channels = (DefaultTableModel) tableField.get(desktop);
@@ -56,7 +76,20 @@ public final class DesktopVisualSmokeTest {
                 Method show = DesktopApp.class.getDeclaredMethod("showProgress", TransferProgress.class);
                 show.setAccessible(true); show.invoke(desktop, progress);
                 frame.validate();
+                JTable channelTable = findTable(frame.getContentPane(), channels);
+                if (channelTable == null || (normalSize.height >= 800
+                        && !channelTable.getVisibleRect().contains(channelTable.getCellRect(1, 0, true))))
+                    throw new AssertionError("Default window clips the second transfer channel");
                 render(frame, destination.resolveSibling("ui-smoke-transfer.png"));
+                frame.setSize(960, 680); frame.validate();
+                assertVisible((JComponent) field(desktop, "stop"), "Disconnect while transferring in small window");
+                assertVisible((JComponent) field(desktop, "cancelTransfer"), "Cancel while transferring in small window");
+                assertVisible((JComponent) field(desktop, "reconnect"), "Reconnect preference while transferring");
+                assertVisible((JComponent) field(desktop, "launchPhone"), "Phone launch preference while transferring");
+                if (!((JButton) field(desktop, "stop")).isEnabled()
+                        || !((JButton) field(desktop, "cancelTransfer")).isEnabled())
+                    throw new AssertionError("Transfer stop actions are unavailable");
+                render(frame, destination.resolveSibling("ui-minimum-transfer.png"));
                 Field active = DesktopApp.class.getDeclaredField("transferActive");
                 active.setAccessible(true); active.set(desktop, false);
                 frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));
@@ -94,8 +127,31 @@ public final class DesktopVisualSmokeTest {
         Container content = frame.getContentPane();
         BufferedImage image = new BufferedImage(content.getWidth(), content.getHeight(), BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = image.createGraphics();
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         content.printAll(graphics);
         graphics.dispose();
         ImageIO.write(image, "png", path.toFile());
+    }
+    private static Object field(DesktopApp desktop, String name) throws Exception {
+        Field value = DesktopApp.class.getDeclaredField(name);
+        value.setAccessible(true);
+        return value.get(desktop);
+    }
+    private static void assertVisible(JComponent component, String description) {
+        Rectangle visible = component.getVisibleRect();
+        if (component.getWidth() < 1 || component.getHeight() < 1
+                || visible.width < component.getWidth() || visible.height < component.getHeight())
+            throw new AssertionError(description + " is clipped: " + visible + " of " + component.getSize());
+    }
+    private static JTable findTable(Container parent, DefaultTableModel model) {
+        for (Component child : parent.getComponents()) {
+            if (child instanceof JTable && ((JTable) child).getModel() == model) return (JTable) child;
+            if (child instanceof Container) {
+                JTable table = findTable((Container) child, model);
+                if (table != null) return table;
+            }
+        }
+        return null;
     }
 }

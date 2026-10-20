@@ -1,0 +1,18 @@
+HybridFileXfer desktop distributions include:
+
+FlatLaf 3.7.2
+Copyright (C) 2019-2026 FormDev Software GmbH. All rights reserved.
+Project: https://github.com/JFormDesigner/FlatLaf
+License: Apache License, Version 2.0 (licenses/FlatLaf-LICENSE.txt).
+Original dependency classes and resources are bundled without modification;
+the dependency's manifest and module descriptor are omitted from the application
+JAR. Its multi-release implementations and native resources are retained.
+
+Dependency URL:
+https://repo.maven.apache.org/maven2/com/formdev/flatlaf/3.7.2/flatlaf-3.7.2.jar
+SHA-256:
+917aff3963c88d797d0fd9b9ccbd70f7681c101df9d11c59e2bc7a3a6c0fabf4
+
+The CI desktop app-image also includes the Eclipse Temurin Java runtime.
+Its licenses remain in the bundled runtime's legal directory.
+Local builds use the runtime from the JDK selected by the builder.

@@ -41,4 +41,5 @@
     <string name="session_changed">連接已變化，請返回主介面重新打開檔案瀏覽器。</string>
     <string name="return_to_main">返回主介面</string>
     <string name="wait_for_folders">請等待兩側目錄成功載入後再傳輸。</string>
+    <string name="transfer_cleanup_warnings">清理警告：%1$d（已完成檔案仍計為成功）</string>
 </resources>

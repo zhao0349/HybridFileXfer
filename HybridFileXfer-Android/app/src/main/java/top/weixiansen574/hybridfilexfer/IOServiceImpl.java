@@ -27,6 +27,13 @@ interface IIOService {
 public class IOServiceImpl extends IIOService.Stub {
     private final top.weixiansen574.hybridfilexfer.core.LocalTransferFileAccess transferFiles =
             new top.weixiansen574.hybridfilexfer.core.LocalTransferFileAccess() {
+                @Override protected boolean sameFile(File first, File second) throws IOException {
+                    try {
+                        android.system.StructStat a=android.system.Os.stat(first.getPath());
+                        android.system.StructStat b=android.system.Os.stat(second.getPath());
+                        return a.st_dev==b.st_dev && a.st_ino==b.st_ino;
+                    } catch (android.system.ErrnoException e) { throw new IOException(e); }
+                }
                 @Override protected void atomicMove(File source, File target, boolean replace) throws IOException {
                     try {
                         if (replace) android.system.Os.rename(source.getPath(), target.getPath());
@@ -51,6 +58,9 @@ public class IOServiceImpl extends IIOService.Stub {
     }
     public void beginTransferFileSession() { transferFiles.beginSession(); }
     public void cancelPendingTransferOperations() { transferFiles.cancelPendingOperations(); }
+    public String[] takeTransferFileWarnings() {
+        return transferFiles.takeWarnings().toArray(new String[0]);
+    }
     public String[] canonicalTransferPath(String path) {
         try { return new String[]{transferFiles.canonicalPath(path), ""}; }
         catch (IOException e) { return new String[]{"",e.toString()}; }

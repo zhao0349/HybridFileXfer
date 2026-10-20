@@ -413,10 +413,13 @@ public final class DesktopApp {
         lastTransferredBytes = summary.transferredBytes;
         taskFailed |= summary.failedFiles > 0 || summary.cancelled;
         taskResult = text("完成 ", "Completed ") + summary.completedFiles + text(" · 跳过 ", " · skipped ") + summary.skippedFiles
-                + text(" · 失败 ", " · failed ") + summary.failedFiles + (summary.cancelled ? text(" · 已取消", " · cancelled") : "");
+                + text(" · 失败 ", " · failed ") + summary.failedFiles
+                + (summary.warnings.isEmpty() ? "" : text(" · 提醒 ", " · warnings ") + summary.warnings.size())
+                + (summary.cancelled ? text(" · 已取消", " · cancelled") : "");
         phase.setText(taskResult);
         appendLog(taskResult);
         for (String failure : summary.failures) appendLog(failure);
+        for (String warning : summary.warnings) appendLog(text("提醒：", "Warning: ") + warning);
     }
     private void completed(boolean upload, long bytes, long millis) {
         transferActive = false; cancelTransfer.setEnabled(false); progress.setIndeterminate(false);

@@ -41,4 +41,5 @@
     <string name="session_changed">连接已变化，请返回主界面重新打开文件浏览器。</string>
     <string name="return_to_main">返回主界面</string>
     <string name="wait_for_folders">请等待两侧目录成功加载后再传输。</string>
+    <string name="transfer_cleanup_warnings">清理警告：%1$d（已完成文件仍计为成功）</string>
 </resources>

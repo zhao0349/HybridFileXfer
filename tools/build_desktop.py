@@ -31,6 +31,16 @@ def run(command, **kwargs):
     subprocess.run(list(map(str, command)), cwd=ROOT, check=True, **kwargs)
 
 
+def reset_directory(path):
+    resolved = path.resolve()
+    boundary = BUILD.resolve()
+    if resolved == boundary or not resolved.is_relative_to(boundary) or not boundary.is_relative_to(ROOT.resolve()):
+        raise RuntimeError("Refusing to remove a directory outside the build workspace")
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True)
+
+
 def compile_java(sources, destination, classpath=None):
     destination.mkdir(parents=True, exist_ok=True)
     args = ["--release", "8", "-encoding", "UTF-8", "-d", str(destination)]
@@ -50,8 +60,7 @@ def main():
     args = parser.parse_args()
     source = ROOT / "HybridFileXfer-PC" / "src"
     classes = BUILD / "classes"
-    if classes.exists():
-        shutil.rmtree(classes)
+    reset_directory(classes)
     compile_java(sorted(source.rglob("*.java")), classes)
     for resource in source.rglob("*"):
         if resource.is_file() and resource.suffix in (".properties", ".png", ".ico"):
@@ -63,10 +72,12 @@ def main():
     jar_path = jar_dir / "HybridFileXfer.jar"
     revision = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT,
                               text=True, stdout=subprocess.PIPE, check=True).stdout.strip()
+    dirty = bool(subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
+                                text=True, stdout=subprocess.PIPE, check=True).stdout.strip())
     manifest = BUILD / "MANIFEST.MF"
     manifest.write_text("Manifest-Version: 1.0\n"
                         "Main-Class: top.weixiansen574.hybridfilexfer.Main\n"
-                        "Implementation-Version: 4.0.0-preview+" + revision + "\n\n",
+                        "Implementation-Version: 4.0.0-preview+" + revision + ("-dirty" if dirty else "") + "\n\n",
                         encoding="utf-8")
     run([java_tool("jar"), "cfm", jar_path, manifest, "-C", classes, "."])
     run([java_tool("java"), "-jar", jar_path, "--version"], timeout=20)
@@ -76,8 +87,7 @@ def main():
         if not tests:
             raise RuntimeError("No Java regression tests found")
         test_classes = BUILD / "test-classes"
-        if test_classes.exists():
-            shutil.rmtree(test_classes)
+        reset_directory(test_classes)
         compile_java(tests, test_classes, classes)
         classpath = os.pathsep.join([str(classes), str(test_classes)])
         reports = BUILD / "test-results"
@@ -114,8 +124,7 @@ def main():
     shutil.copy2(jar_path, distributions / jar_path.name)
     if args.package:
         image_dir = BUILD / "app"
-        if image_dir.exists():
-            shutil.rmtree(image_dir)
+        reset_directory(image_dir)
         run([java_tool("jpackage"), "--type", "app-image", "--name", "HybridFileXfer",
              "--input", jar_dir, "--main-jar", jar_path.name, "--dest", image_dir,
              "--app-version", "4.0.0", "--vendor", "HybridFileXfer contributors",
@@ -136,6 +145,10 @@ def main():
         run([executable, "--version"], timeout=30)
         documentation = image_dir / "Documentation"
         documentation.mkdir()
+        (documentation / "SOURCE.txt").write_text(
+            "Source: https://github.com/zhao0349/HybridFileXfer/tree/" + revision + "\n"
+            "Build contains local uncommitted changes: " + str(dirty) + "\n",
+            encoding="utf-8")
         for path in (ROOT / "LICENSE.txt", ROOT / "README.md", ROOT / "HybridFileXfer-PC/DESKTOP.md"):
             if path.is_file():
                 target = documentation / path.relative_to(ROOT)

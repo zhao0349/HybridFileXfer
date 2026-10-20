@@ -41,4 +41,5 @@
     <string name="session_changed">The connection changed. Return to the main screen and reopen the file browser.</string>
     <string name="return_to_main">Return to main screen</string>
     <string name="wait_for_folders">Wait for both folders to load successfully before transferring.</string>
+    <string name="transfer_cleanup_warnings">Cleanup warnings: %1$d (completed files remain successful)</string>
 </resources>

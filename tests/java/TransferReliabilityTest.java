@@ -22,6 +22,9 @@ public final class TransferReliabilityTest {
         volatile TransferSummary summary;
         volatile TransferProgress progress;
         volatile boolean throwCallbacks;
+        final Map<String,Long> channelBytes=new ConcurrentHashMap<>();
+        volatile int completedChannels;
+        volatile boolean validChannelCallbacks=true;
         Runnable progressHook;
         @Override public void onProgress(TransferProgress p) {
             progress=p;
@@ -33,7 +36,11 @@ public final class TransferReliabilityTest {
         @Override public void onFileUploading(String i,String p,long n,long t) {}
         @Override public void onFileDownloading(String i,String p,long n,long t) {}
         @Override public void onSpeedInfo(List<TrafficInfo> t) {}
-        @Override public void onChannelComplete(String i,long n,long t) {}
+        @Override public void onChannelComplete(String i,long n,long t) {
+            if (summary!=null || n<0 || t<0 || channelBytes.put(i,n)!=null) validChannelCallbacks=false;
+            completedChannels++;
+            if(throwCallbacks) throw new IllegalStateException("Synthetic channel UI failure");
+        }
         @Override public void onChannelError(String i,int t,String m) {}
         @Override public void onReadFileError(String m) {}
         @Override public void onWriteFileError(String m) {}
@@ -155,6 +162,12 @@ public final class TransferReliabilityTest {
             check(r.sent.completedFiles==2 && r.sent.transferredBytes==5L*MB+137,"Wrong confirmed counters");
             check(r.sender.progress.totalBytes==5L*MB+137 && r.sender.progress.totalFiles==2,"Prescan totals wrong");
             check(r.receiver.states.contains("verified:large.bin"),"Verification result missing");
+            for (Observer endpoint:Arrays.asList(r.sender,r.receiver)) {
+                check(endpoint.completedChannels==3 && endpoint.validChannelCallbacks,
+                        "Each channel must complete once before the transfer summary");
+                check(endpoint.channelBytes.values().stream().mapToLong(Long::longValue).sum()==5L*MB+137,
+                        "Final per-channel byte totals use the wrong transfer direction");
+            }
         } finally { cleanup(source); cleanup(target); }
     }
     private static void lostChannelFallback() throws Exception {

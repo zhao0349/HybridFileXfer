@@ -51,6 +51,7 @@ public class HFXServer extends HFXService {
     private volatile String pairingSecret = Pairing.newSecret();
     private volatile Runnable disconnectListener;
     private ScheduledThreadPoolExecutor heartbeat;
+    private final Object lifecycleLock = new Object();
     private final ReentrantLock operationLock = new ReentrantLock();
     private final List<SocketChannel> openedChannels = Collections.synchronizedList(new ArrayList<SocketChannel>());
     protected int remoteFileSystem;
@@ -202,20 +203,23 @@ public class HFXServer extends HFXService {
     }
 
     private void startHeartbeat() {
-        heartbeat = new ScheduledThreadPoolExecutor(1, runnable -> {
-            Thread thread = new Thread(runnable, "HFX-phone-heartbeat");
-            thread.setDaemon(true); return thread;
-        });
-        heartbeat.setRemoveOnCancelPolicy(true);
-        heartbeat.scheduleWithFixedDelay(() -> {
-            if (closed || !operationLock.tryLock()) return;
-            try (HandshakeDeadline timer = new HandshakeDeadline(ctChannel, 5000)) {
-                ctChannel.writeShort(0x7f01);
-                if (!ctChannel.readBoolean()) throw new IOException("Peer disconnected");
-            } catch (IOException error) {
-                connectionLost();
-            } finally { operationLock.unlock(); }
-        }, 3, 3, TimeUnit.SECONDS);
+        synchronized (lifecycleLock) {
+            if (closed) return;
+            heartbeat = new ScheduledThreadPoolExecutor(1, runnable -> {
+                Thread thread = new Thread(runnable, "HFX-phone-heartbeat");
+                thread.setDaemon(true); return thread;
+            });
+            heartbeat.setRemoveOnCancelPolicy(true);
+            heartbeat.scheduleWithFixedDelay(() -> {
+                if (closed || !operationLock.tryLock()) return;
+                try (HandshakeDeadline timer = new HandshakeDeadline(ctChannel, 5000)) {
+                    ctChannel.writeShort(0x7f01);
+                    if (!ctChannel.readBoolean()) throw new IOException("Peer disconnected");
+                } catch (IOException error) {
+                    connectionLost();
+                } finally { operationLock.unlock(); }
+            }, 3, 3, TimeUnit.SECONDS);
+        }
     }
 
     private void connectionLost() {
@@ -358,9 +362,11 @@ public class HFXServer extends HFXService {
     public void disconnect() { close(); }
 
     public void close() {
-        closed = true;
+        synchronized (lifecycleLock) {
+            closed = true;
+            if (heartbeat != null) heartbeat.shutdownNow();
+        }
         cancelTransfer();
-        if (heartbeat != null) heartbeat.shutdownNow();
         ServerSocketChannel listener = serverSocketChannel;
         if (listener != null) try { listener.close(); } catch (IOException ignored) { }
         closeAcceptedChannels();

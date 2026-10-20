@@ -7,6 +7,9 @@ import java.nio.file.StandardCopyOption;
 import top.weixiansen574.hybridfilexfer.core.LocalTransferFileAccess;
 
 public class JdkTransferFileAccess extends LocalTransferFileAccess {
+    @Override protected boolean sameFile(File first,File second) throws IOException {
+        return Files.isSameFile(first.toPath(),second.toPath());
+    }
     @Override protected File physicalPath(File file) throws IOException {
         java.nio.file.Path path=file.toPath().toAbsolutePath().normalize();
         java.util.ArrayDeque<String> tail=new java.util.ArrayDeque<>();
@@ -30,7 +33,11 @@ public class JdkTransferFileAccess extends LocalTransferFileAccess {
                 Files.move(source.toPath(), target.toPath());
             } else {
                 Files.createLink(target.toPath(), source.toPath());
-                Files.delete(source.toPath());
+                try { Files.delete(source.toPath()); }
+                catch (IOException | SecurityException cleanupFailure) {
+                    // The target has already been published. The caller reports the
+                    // leftover part as a warning and prevents it being truncated later.
+                }
             }
         }
     }

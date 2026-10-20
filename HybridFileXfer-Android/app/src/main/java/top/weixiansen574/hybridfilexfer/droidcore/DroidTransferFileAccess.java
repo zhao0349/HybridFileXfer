@@ -20,6 +20,14 @@ public final class DroidTransferFileAccess implements TransferFileAccess {
     @Override public void cancelPendingOperations() {
         try { io.cancelPendingTransferOperations(); } catch (RemoteException ignored) {}
     }
+    @Override public List<String> takeWarnings() {
+        try {
+            String[] warnings=io.takeTransferFileWarnings();
+            return warnings==null?java.util.Collections.emptyList():java.util.Arrays.asList(warnings);
+        } catch (RemoteException e) {
+            return java.util.Collections.singletonList("Could not retrieve filesystem cleanup warnings: "+e);
+        }
+    }
     private static void checked(String error) throws IOException { if (error!=null) throw new IOException(error); }
     @Override public String canonicalPath(String path) throws IOException {
         try {

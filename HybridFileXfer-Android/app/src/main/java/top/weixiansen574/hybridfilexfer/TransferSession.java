@@ -100,13 +100,20 @@ public final class TransferSession implements BTransferFileCallback {
     public String resultText() {
         String text = status + "\n" + source + " → " + destination + "\n"
                 + Utils.formatFileSize(traffic) + " · " + Utils.formatTime(elapsed);
-        if (summary != null) {
-            text += "\n" + context.getString(R.string.transfer_result_counts,
-                    summary.completedFiles, summary.skippedFiles, summary.failedFiles);
-            if (summary.cancelled) text += "\n" + context.getString(R.string.transfer_cancelled);
-            for (String failure : summary.failures) text += "\n" + failure;
-        }
+        if (summary != null) text += "\n" + formatSummary(context, summary);
         return text;
+    }
+
+    static String formatSummary(Context context, TransferSummary summary) {
+        StringBuilder text = new StringBuilder(context.getString(R.string.transfer_result_counts,
+                summary.completedFiles, summary.skippedFiles, summary.failedFiles));
+        if (summary.cancelled) text.append('\n').append(context.getString(R.string.transfer_cancelled));
+        for (String failure : summary.failures) text.append('\n').append(failure);
+        if (!summary.warnings.isEmpty()) {
+            text.append('\n').append(context.getString(R.string.transfer_cleanup_warnings, summary.warnings.size()));
+            for (String warning : summary.warnings) text.append('\n').append(warning);
+        }
+        return text.toString();
     }
     private void finish(String message) {
         if (!running) return;

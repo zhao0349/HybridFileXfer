@@ -29,6 +29,7 @@ public final class ClientSession {
     private DroidHFXClient client;
     private Listener listener;
     private int generation;
+    private String lastTransferReport = "";
     public boolean active;
     public boolean connecting;
     public String state = "";
@@ -48,6 +49,7 @@ public final class ClientSession {
         int attempt = ++generation;
         active = true;
         connecting = true;
+        lastTransferReport = "";
         channels.clear();
         state(context.getString(R.string.starting_io_service));
         try {
@@ -113,10 +115,16 @@ public final class ClientSession {
                 changed();
             }
             @Override public void onReceiving() {
-                if (current()) state(context.getString(R.string.zheng_zai_jie_shou_wen_jian));
+                if (current()) {
+                    lastTransferReport = "";
+                    state(context.getString(R.string.zheng_zai_jie_shou_wen_jian));
+                }
             }
             @Override public void onSending() {
-                if (current()) state(context.getString(R.string.zheng_zai_fa_song_wen_jian));
+                if (current()) {
+                    lastTransferReport = "";
+                    state(context.getString(R.string.zheng_zai_fa_song_wen_jian));
+                }
             }
             @Override public void onExit() { if (current()) stop(); }
             @Override public void onFileUploading(String name, String path, long size, long total) {
@@ -145,7 +153,8 @@ public final class ClientSession {
             @Override public void onComplete(boolean upload, long traffic, long time) {
                 if (!current()) return;
                 for (Channel channel : channels.values()) channel.uploadSpeed = channel.downloadSpeed = 0;
-                state((upload ? "↑ " : "↓ ") + Utils.formatFileSize(traffic) + " · " + Utils.formatTime(time));
+                state((upload ? "↑ " : "↓ ") + Utils.formatFileSize(traffic) + " · " + Utils.formatTime(time)
+                        + "\n" + lastTransferReport);
             }
             @Override public void onProgress(top.weixiansen574.hybridfilexfer.core.TransferProgress progress) {
                 if (current()) state(Utils.formatFileSize(progress.transferredBytes) + " / "
@@ -156,13 +165,12 @@ public final class ClientSession {
             @Override public void onPhase(String phase) { if (current()) state(phase); }
             @Override public void onSummary(top.weixiansen574.hybridfilexfer.core.TransferSummary summary) {
                 if (!current()) return;
-                String report = context.getString(R.string.transfer_result_counts,
-                        summary.completedFiles, summary.skippedFiles, summary.failedFiles);
-                if (summary.cancelled) report += "\n" + context.getString(R.string.transfer_cancelled);
-                LocalHistory.transfer(context, report);
+                lastTransferReport = TransferSession.formatSummary(context, summary);
+                LocalHistory.transfer(context, lastTransferReport);
             }
             @Override public void onIncomplete() {
-                if (current()) state(context.getString(R.string.chuan_shu_shi_fa_sheng_yi_chang));
+                if (current()) state(context.getString(R.string.chuan_shu_shi_fa_sheng_yi_chang)
+                        + "\n" + lastTransferReport);
             }
             @Override public void onComplete() {
                 // This is task completion, distinct from one completed transfer above.

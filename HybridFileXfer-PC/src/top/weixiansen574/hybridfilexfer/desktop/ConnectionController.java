@@ -211,11 +211,11 @@ public final class ConnectionController implements AutoCloseable {
             @Override public void onConnectTransferChannelFailed(String name, InetAddress address, Exception error) { log(s, "Channel " + name + ": " + error); }
             @Override public void onOOM(int created, int required, long max, String arch) {
                 a.terminalFailure = true;
-                state(a, State.ERROR, text("电脑内存不足。请降低手机中的缓冲区设置，并使用 64 位 Java。", "Insufficient desktop memory. Reduce phone buffer settings and use 64-bit Java."));
+                state(a, State.ERROR, text("电脑内存不足。请关闭其他应用、减少并行通道，并使用 64 位 Java。", "Insufficient desktop memory. Close other apps, use fewer channels, and use 64-bit Java."));
             }
             @Override public void onRemoteOOM() {
                 a.terminalFailure = true;
-                state(a, State.ERROR, text("手机内存不足，请降低缓冲区设置后重试。", "Phone memory is insufficient. Reduce buffer settings and retry."));
+                state(a, State.ERROR, text("手机内存不足，请关闭其他应用、减少并行通道后重试。", "Phone memory is insufficient. Close other apps or use fewer channels and retry."));
             }
             @Override public void onConnectSuccess(List<String> channels) {
                 if (a.stopped) return;
@@ -270,7 +270,7 @@ public final class ConnectionController implements AutoCloseable {
     public static String friendlyError(Throwable error) {
         if (error instanceof AuthenticationException) return text("配对失败。请核对手机配对码，然后重新连接。", "Pairing failed. Check the phone pairing code and reconnect.");
         if (error instanceof ProtocolMismatchException) return text("版本不兼容，请安装配套的电脑和手机版。", "Install matching desktop and phone versions.");
-        if (error instanceof OutOfMemoryError) return text("内存不足。降低缓冲区设置后重试。", "Not enough memory. Reduce buffer settings and retry.");
+        if (error instanceof OutOfMemoryError) return text("内存不足。关闭其他应用、减少并行通道后重试。", "Not enough memory. Close other apps or use fewer channels and retry.");
         if (error instanceof java.net.ConnectException || error instanceof java.net.SocketTimeoutException)
             return text("暂时无法连接手机，请检查授权、网络及手机服务状态。", "Phone is not reachable yet. Check authorization, network, and phone service.");
         if (error instanceof java.io.EOFException) return text("手机连接已断开。", "The phone disconnected.");

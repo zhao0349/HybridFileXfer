@@ -19,6 +19,7 @@ import top.weixiansen574.nio.DataByteChannel;
 public final class ReliableTransfer {
     private static final int END=0, FILE=1, DIRECTORY=2, SOURCE_ERROR=3;
     private static final int BLOCK=10, FILE_END=11, ACK=12;
+    private static final int MAX_WARNINGS=100,MAX_WARNING_LENGTH=1024;
     private final TransferFileAccess fs;
     private final DataByteChannel control;
     private final List<TransferConnection> connections;
@@ -63,6 +64,33 @@ public final class ReliableTransfer {
         synchronized(summary) { summary.failedFiles++; summary.failures.add(path+": "+message); }
         result(path,"failed",message);
     }
+    private void recordWarning(String path,String warning) {
+        synchronized(summary) { summary.addWarning(warning); }
+        result(path,"warning",warning);
+    }
+    private List<String> collectWarnings(String path) {
+        List<String> pending;
+        try { pending=fs.takeWarnings(); }
+        catch (RuntimeException e) { pending=Collections.singletonList("Could not retrieve filesystem warnings: "+e); }
+        List<String> warnings=new ArrayList<>();
+        for (int i=0;i<Math.min(pending.size(),MAX_WARNINGS);i++) {
+            String warning=i==MAX_WARNINGS-1 && pending.size()>MAX_WARNINGS
+                    ?"Additional filesystem warnings were omitted.":pending.get(i);
+            if (warning.length()>MAX_WARNING_LENGTH) warning=warning.substring(0,MAX_WARNING_LENGTH);
+            warnings.add(warning);
+            recordWarning(path,warning);
+        }
+        return warnings;
+    }
+    private void readWarnings(String path) throws IOException {
+        int count=control.readInt();
+        if (count<0 || count>MAX_WARNINGS) throw new IOException("Invalid file warning count");
+        for (int i=0;i<count;i++) {
+            String warning=control.readUTF();
+            if (warning.length()>MAX_WARNING_LENGTH) throw new IOException("Oversized file warning");
+            recordWarning(path,warning);
+        }
+    }
     private synchronized void progress(long prefix) {
         currentPrefix=Math.max(currentPrefix,prefix);
         TransferProgress p=new TransferProgress();
@@ -88,8 +116,15 @@ public final class ReliableTransfer {
         }
         if (interrupted) Thread.currentThread().interrupt();
         summary.cancelled=cancelled.get();
+        long elapsed=Math.max(0,System.currentTimeMillis()-started);
+        for (TransferConnection connection:connections) {
+            top.weixiansen574.hybridfilexfer.core.bean.TrafficInfo traffic=connection.getTotalTraffic();
+            long bytes=upload?traffic.uploadTraffic:traffic.downloadTraffic;
+            notifySafely(() -> callback.onChannelComplete(connection.iName,bytes,elapsed));
+        }
+        collectWarnings(currentPath);
         notifySafely(() -> callback.onSummary(summary));
-        if (summary.isSuccessful()) notifySafely(() -> callback.onComplete(upload,summary.transferredBytes,System.currentTimeMillis()-started));
+        if (summary.isSuccessful()) notifySafely(() -> callback.onComplete(upload,summary.transferredBytes,elapsed));
         else notifySafely(() -> callback.onIncomplete());
     }
 
@@ -215,6 +250,7 @@ public final class ReliableTransfer {
         control.writeUTF(sourceFailure==null?"":shortMessage(sourceFailure));
         boolean success=control.readBoolean();
         message=control.readUTF();
+        readWarnings(entry.relative);
         if (success) {
             summary.completedFiles++;
             result(entry.relative,options.verifySha256?"verified":"completed",message);
@@ -307,9 +343,12 @@ public final class ReliableTransfer {
                 catch (IOException e) { failure=e.toString(); }
             }
             if (outcome==2) { fs.abandon(token,false); token=""; }
+            List<String> warnings=collectWarnings(relative);
             control.writeBoolean(failure==null);
             String completedMessage="File committed: "+prepared.target;
             control.writeUTF(failure==null?shortMessage(completedMessage):shortMessage(failure));
+            control.writeInt(warnings.size());
+            for (String warning:warnings) control.writeUTF(warning);
             if (failure==null) { summary.completedFiles++; result(relative,options.verifySha256?"verified":"completed",completedMessage); }
             else failed(relative,failure);
             progress(state.prefix);

@@ -10,6 +10,8 @@ import top.weixiansen574.hybridfilexfer.core.bean.RemoteFile;
 public interface TransferFileAccess {
     default void beginSession() throws IOException {}
     default void cancelPendingOperations() {}
+    /** Drains nonfatal filesystem warnings; implementations must bound both count and message size. */
+    default List<String> takeWarnings() { return java.util.Collections.emptyList(); }
     final class Handle implements Closeable {
         public final FileChannel channel;
         private final Closeable owner;

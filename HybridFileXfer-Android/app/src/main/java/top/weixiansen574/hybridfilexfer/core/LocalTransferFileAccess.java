@@ -10,10 +10,20 @@ import top.weixiansen574.hybridfilexfer.core.bean.RemoteFile;
 public abstract class LocalTransferFileAccess implements TransferFileAccess {
     private static final String MAGIC = "HybridFileXfer-stage-4";
     private final Map<String,Stage> stages = new HashMap<>();
+    private final List<String> warnings = new ArrayList<>();
     private volatile boolean cancellationRequested;
-    @Override public void beginSession() { cancellationRequested=false; }
+    @Override public synchronized void beginSession() { cancellationRequested=false; warnings.clear(); }
     // Binder cancellation must not wait for the monitor held by prepare/commit while hashing.
     @Override public void cancelPendingOperations() { cancellationRequested=true; }
+    @Override public synchronized List<String> takeWarnings() {
+        List<String> result=new ArrayList<>(warnings);
+        warnings.clear();
+        return result;
+    }
+    private void warning(String message) {
+        if (warnings.size()<100) warnings.add(message.length()>1024?message.substring(0,1024):message);
+        else warnings.set(99,"Additional filesystem warnings were omitted.");
+    }
     private static final class Stage {
         File root, target, part, meta, lockPath;
         String identity, hash;
@@ -132,8 +142,24 @@ public abstract class LocalTransferFileAccess implements TransferFileAccess {
                     throw new IOException("Staging metadata does not match; existing files were preserved");
                 try { s.offset=Long.parseLong(p.getProperty("offset")); }
                 catch (RuntimeException e) { throw new IOException("Invalid staging checkpoint",e); }
-                if (s.offset<0 || s.offset>size || !s.part.isFile() || s.part.length()<s.offset)
+                if (s.offset<0 || s.offset>size)
                     throw new IOException("Damaged staging checkpoint; existing files were preserved");
+                if (!s.part.exists()) {
+                    // Publication can succeed while metadata cleanup fails (for example,
+                    // a Windows handle denies deletion). Never touch the completed target.
+                    // Reset metadata before creating the new part, so another failed
+                    // checkpoint replacement cannot leave a zero-byte part with an old offset.
+                    s.offset=0;
+                    save(s);
+                    if (!s.part.createNewFile()) throw new IOException("Cannot recreate staging file");
+                } else if (!s.part.isFile() || s.part.length()<s.offset) {
+                    throw new IOException("Damaged staging checkpoint; existing files were preserved");
+                } else if (s.target.exists() && sameFile(s.part,s.target)) {
+                    // A link-based no-replace publication can leave its source behind.
+                    // If metadata cleanup also failed, truncating that part would truncate
+                    // the successfully published target through the shared inode.
+                    throw new IOException("Partial file is linked to the published destination; both were preserved");
+                }
             } else {
                 if (s.part.exists()) throw new IOException("Unrecognized partial file; preserved for inspection");
                 if (!s.part.createNewFile()) throw new IOException("Cannot create staging file");
@@ -177,8 +203,24 @@ public abstract class LocalTransferFileAccess implements TransferFileAccess {
         if (s.modified>0 && !s.part.setLastModified(s.modified)) throw new IOException("Cannot preserve modification time");
         atomicMove(s.part,s.target,s.overwrite);
         stages.remove(token);
-        try { if (!s.meta.delete() && s.meta.exists()) throw new IOException("Committed, but cannot remove staging metadata"); }
-        finally { release(s); }
+        // The final file is now published. Cleanup errors must never reverse that outcome.
+        try {
+            if (s.part.exists())
+                warning("File committed: "+s.target+"; published staging file could not be removed: "+s.part);
+        } catch (SecurityException e) {
+            warning("File committed: "+s.target+"; could not inspect published staging file cleanup: "+e);
+        }
+        try {
+            if (!s.meta.delete() && s.meta.exists())
+                warning("File committed: "+s.target+"; could not remove staging metadata: "+s.meta);
+        } catch (SecurityException e) {
+            warning("File committed: "+s.target+"; staging metadata cleanup was denied: "+e);
+        } finally {
+            try { release(s); }
+            catch (IOException | SecurityException e) {
+                warning("File committed: "+s.target+"; could not release the staging lock cleanly: "+e);
+            }
+        }
     }
     @Override public synchronized void abandon(String token,boolean keep) throws IOException {
         Stage s=stages.remove(token);
@@ -218,6 +260,7 @@ public abstract class LocalTransferFileAccess implements TransferFileAccess {
             atomicMove(temporary,s.meta,true);
         } finally { if (temporary.exists()) temporary.delete(); }
     }
+    protected abstract boolean sameFile(File first,File second) throws IOException;
     protected abstract void atomicMove(File source,File target,boolean replace) throws IOException;
     private static void release(Stage s) throws IOException {
         try { if (s.lock!=null && s.lock.isValid()) s.lock.release(); }

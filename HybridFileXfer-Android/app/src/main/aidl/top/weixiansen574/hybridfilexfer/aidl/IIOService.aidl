@@ -29,5 +29,6 @@ interface IIOService {
     String[] canonicalTransferPath(String path) = 28;
     void beginTransferFileSession() = 29;
     void cancelPendingTransferOperations() = 30;
+    String[] takeTransferFileWarnings() = 31;
     void destroy() = 16777114;
 }

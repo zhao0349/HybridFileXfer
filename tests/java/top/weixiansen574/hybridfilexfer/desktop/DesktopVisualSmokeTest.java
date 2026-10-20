@@ -39,6 +39,7 @@ public final class DesktopVisualSmokeTest {
                 frame.validate();
                 Dimension normalSize = frame.getSize();
                 render(frame, destination);
+                renderAdvanced(desktop, frame, destination.resolveSibling("ui-advanced.png"));
                 JComboBox<?> mode = (JComboBox<?>) field(desktop, "mode");
                 mode.setSelectedIndex(1);
                 ((JTextField) field(desktop, "address")).setText("192.168.1.24");
@@ -50,11 +51,11 @@ public final class DesktopVisualSmokeTest {
                 assertVisible((JComponent) field(desktop, "cancelTransfer"), "Cancel in small window");
                 assertVisible((JComponent) field(desktop, "reconnect"), "Reconnect preference in small window");
                 assertVisible((JComponent) field(desktop, "launchPhone"), "Phone launch preference in small window");
-                JSpinner serverPort = (JSpinner) field(desktop, "port");
-                assertSpinnerText(serverPort);
+                PortField serverPort = (PortField) field(desktop, "port");
+                assertPortText(serverPort);
                 render(frame, destination.resolveSibling("ui-minimum.png"));
                 serverPort.setValue(65535); frame.validate();
-                assertSpinnerText(serverPort);
+                assertPortText(serverPort);
                 assertVisible((JComponent) field(desktop, "reconnect"), "Reconnect preference with maximum port");
                 assertVisible((JComponent) field(desktop, "launchPhone"), "Phone launch preference with maximum port");
                 render(frame, destination.resolveSibling("ui-maximum-port.png"));
@@ -132,9 +133,13 @@ public final class DesktopVisualSmokeTest {
         throw new AssertionError("Window close did not finish");
     }
     private static void render(JFrame frame, Path path) throws Exception {
-        Container content = frame.getContentPane();
+        renderContent(frame.getContentPane(), path);
+    }
+    private static void renderContent(Container content, Path path) throws Exception {
         BufferedImage image = new BufferedImage(content.getWidth(), content.getHeight(), BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = image.createGraphics();
+        graphics.setColor(UIManager.getColor("Panel.background"));
+        graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
         graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         content.printAll(graphics);
@@ -162,11 +167,30 @@ public final class DesktopVisualSmokeTest {
         }
         return null;
     }
-    private static void assertSpinnerText(JSpinner spinner) {
-        JFormattedTextField editor = ((JSpinner.NumberEditor) spinner.getEditor()).getTextField();
+    private static void assertPortText(PortField editor) {
         Insets insets = editor.getInsets();
         int width = editor.getWidth() - insets.left - insets.right;
         if (editor.getFontMetrics(editor.getFont()).stringWidth(editor.getText()) > width)
             throw new AssertionError("Port text is clipped: " + editor.getText() + " in " + width + "px");
+        for (Component component : editor.getComponents())
+            if (component instanceof AbstractButton)
+                throw new AssertionError("Direct port input contains an arrow button");
+    }
+    private static void renderAdvanced(DesktopApp desktop, JFrame owner, Path path) throws Exception {
+        PortField phone = (PortField) field(desktop, "advancedPort");
+        PortField local = (PortField) field(desktop, "localPort");
+        Container panel = phone.getParent();
+        JDialog preview = new JDialog(owner);
+        try {
+            preview.setContentPane(panel);
+            preview.pack(); preview.addNotify(); preview.validate();
+            assertPortText(phone); assertPortText(local);
+            assertVisible(phone, "Advanced phone port");
+            assertVisible(local, "Advanced local port");
+            renderContent(panel, path);
+        } finally {
+            preview.setContentPane(new JPanel());
+            preview.dispose();
+        }
     }
 }

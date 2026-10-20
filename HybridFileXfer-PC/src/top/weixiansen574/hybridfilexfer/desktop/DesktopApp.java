@@ -37,8 +37,9 @@ public final class DesktopApp {
     private final JComboBox<String> mode = new JComboBox<>(new String[]{text("USB / ADB", "USB / ADB"), text("Wi-Fi / 网络", "Wi-Fi / Network")});
     private final JComboBox<Object> devices = new JComboBox<>();
     private final JTextField address = new JTextField(18), directory = new JTextField(28);
-    private final JSpinner port = new JSpinner(new SpinnerNumberModel(5740, 1, 65535, 1));
-    private final JSpinner localPort = new JSpinner(new SpinnerNumberModel(0, 0, 65535, 1));
+    private final PortField port = new PortField(5740, 1, 65535);
+    private final PortField localPort = new PortField(0, 0, 65535);
+    private PortField advancedPort;
     private final JPasswordField pairing = new JPasswordField(18);
     private final JCheckBox reconnect = new JCheckBox(text("等待手机并自动重新连接", "Wait for phone and reconnect automatically"), true);
     private final JCheckBox launchPhone = new JCheckBox(text("通过 ADB 打开手机 App（手机上确认）", "Open phone app through ADB (confirm on phone)"), true);
@@ -126,12 +127,6 @@ public final class DesktopApp {
         String downloads = Paths.get(System.getProperty("user.home"), "Downloads").toString();
         if (!Files.isDirectory(Paths.get(downloads))) downloads = System.getProperty("user.home");
         directory.setText("/".equals(options.directory) ? preference("directory", downloads) : options.directory);
-        port.setEditor(new JSpinner.NumberEditor(port, "0"));
-        localPort.setEditor(new JSpinner.NumberEditor(localPort, "0"));
-        ((JSpinner.NumberEditor) port.getEditor()).getTextField().setColumns(6);
-        ((JSpinner.NumberEditor) localPort.getEditor()).getTextField().setColumns(6);
-        ((JSpinner.NumberEditor) port.getEditor()).getTextField().setHorizontalAlignment(JTextField.LEFT);
-        ((JSpinner.NumberEditor) localPort.getEditor()).getTextField().setHorizontalAlignment(JTextField.LEFT);
         port.setPreferredSize(new Dimension(100, 28));
         localPort.setPreferredSize(new Dimension(100, 28));
         directory.setPreferredSize(new Dimension(390, 28));
@@ -308,8 +303,7 @@ public final class DesktopApp {
         more.setMargin(new Insets(6, 12, 6, 12));
         more.setForeground(BLUE);
         JPanel advanced = advancedSettings();
-        more.addActionListener(e -> JOptionPane.showMessageDialog(frame, advanced,
-                text("传输与连接设置", "Transfer and connection settings"), JOptionPane.PLAIN_MESSAGE));
+        more.addActionListener(e -> showAdvancedSettings(advanced));
         preferences.add(more, BorderLayout.EAST);
         connectionBottom.add(preferences, BorderLayout.NORTH);
         JPanel actions = transparent(new BorderLayout(16, 0));
@@ -422,14 +416,29 @@ public final class DesktopApp {
         row(panel, 1, text("文件保护", "File protection"), line(verify, resume));
         row(panel, 2, "", line(incremental, prescan));
         row(panel, 3, text("ADB 本地端口", "Local ADB port"), line(localPort, label(text("0 = 自动分配", "0 = automatic"), 12f, false, MUTED)));
-        JSpinner phonePort = new JSpinner(port.getModel());
-        phonePort.setEditor(new JSpinner.NumberEditor(phonePort, "0"));
-        ((JSpinner.NumberEditor) phonePort.getEditor()).getTextField().setHorizontalAlignment(JTextField.LEFT);
-        phonePort.setPreferredSize(new Dimension(112, 38));
-        row(panel, 4, text("手机服务端口", "Phone service port"), phonePort);
+        advancedPort = new PortField(port.getModel());
+        advancedPort.setPreferredSize(new Dimension(112, 38));
+        row(panel, 4, text("手机服务端口", "Phone service port"), advancedPort);
         row(panel, 5, "", burst);
         row(panel, 6, "", label(text("实验选项仅影响本程序启动的 ADB 进程。", "The experimental option only affects this app's ADB processes."), 12f, false, MUTED));
         return panel;
+    }
+
+    private void showAdvancedSettings(JPanel advanced) {
+        try { port.commitEdit(); localPort.commitEdit(); }
+        catch (java.text.ParseException error) { showError(error); return; }
+        while (true) {
+            int result = JOptionPane.showConfirmDialog(frame, advanced,
+                    text("传输与连接设置", "Transfer and connection settings"),
+                    JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE);
+            if (result != JOptionPane.OK_OPTION) {
+                advancedPort.setValue(port.getValue());
+                localPort.setValue(localPort.getValue());
+                return;
+            }
+            try { advancedPort.commitEdit(); localPort.commitEdit(); return; }
+            catch (java.text.ParseException error) { showError(error); }
+        }
     }
 
     private static JPanel field(String title, Component value) {
@@ -580,6 +589,8 @@ public final class DesktopApp {
         });
     }
     private void requestPhone() {
+        try { port.commitEdit(); }
+        catch (java.text.ParseException error) { showError(error); return; }
         String selected = selectedDevice();
         String secret = obtainSecret();
         if (secret.isEmpty()) { secret = ConnectionController.newPairingSecret(); pairing.setText(secret); sessionSecret = secret; }

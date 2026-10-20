@@ -21,6 +21,10 @@ public final class DesktopVisualSmokeTest {
             System.out.println("Desktop visual smoke skipped: no display (run manually on a desktop).");
             return;
         }
+        Thread.setDefaultUncaughtExceptionHandler((thread, failure) -> {
+            failure.printStackTrace();
+            System.exit(1);
+        });
         Path destination = Paths.get(args.length == 0 ? ".build/desktop-agent/ui-smoke.png" : args[0]).toAbsolutePath();
         Files.createDirectories(destination.getParent());
         System.setProperty("hfx.dataDir", destination.getParent().resolve("smoke-data").toString());
@@ -40,6 +44,7 @@ public final class DesktopVisualSmokeTest {
                 Dimension normalSize = frame.getSize();
                 render(frame, destination);
                 renderAdvanced(desktop, frame, destination.resolveSibling("ui-advanced.png"));
+                DesktopInteractionChecks.verifyThemes(desktop, frame, destination.getParent(), "idle");
                 JComboBox<?> mode = (JComboBox<?>) field(desktop, "mode");
                 mode.setSelectedIndex(1);
                 ((JTextField) field(desktop, "address")).setText("192.168.1.24");
@@ -86,10 +91,12 @@ public final class DesktopVisualSmokeTest {
                 show.setAccessible(true); show.invoke(desktop, progress);
                 frame.validate();
                 JTable channelTable = findTable(frame.getContentPane(), channels);
+                render(frame, destination.resolveSibling("ui-smoke-transfer.png"));
                 if (channelTable == null || (normalSize.height >= 800
                         && !channelTable.getVisibleRect().contains(channelTable.getCellRect(1, 0, true))))
-                    throw new AssertionError("Default window clips the second transfer channel");
-                render(frame, destination.resolveSibling("ui-smoke-transfer.png"));
+                    throw new AssertionError("Default window clips the second transfer channel: "
+                            + (channelTable == null ? "missing" : channelTable.getVisibleRect()
+                            + " does not contain " + channelTable.getCellRect(1, 0, true)));
                 frame.setSize(960, 680); frame.validate();
                 assertVisible((JComponent) field(desktop, "stop"), "Disconnect while transferring in small window");
                 assertVisible((JComponent) field(desktop, "cancelTransfer"), "Cancel while transferring in small window");
@@ -99,6 +106,7 @@ public final class DesktopVisualSmokeTest {
                         || !((JButton) field(desktop, "cancelTransfer")).isEnabled())
                     throw new AssertionError("Transfer stop actions are unavailable");
                 render(frame, destination.resolveSibling("ui-minimum-transfer.png"));
+                DesktopInteractionChecks.verifyThemes(desktop, frame, destination.getParent(), "transfer");
                 Field active = DesktopApp.class.getDeclaredField("transferActive");
                 active.setAccessible(true); active.set(desktop, false);
                 frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));

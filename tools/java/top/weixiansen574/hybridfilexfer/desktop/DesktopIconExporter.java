@@ -5,7 +5,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import javax.imageio.ImageIO;
 
-/** Export the same code-drawn brand mark used by the actual application window. */
+/** Export the author's original logo, shared with the actual application window. */
 public final class DesktopIconExporter {
     public static void main(String[] args) throws Exception {
         Path output = Paths.get(args[0]);

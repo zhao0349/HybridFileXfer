@@ -145,6 +145,11 @@ def main():
             target = classes / resource.relative_to(source)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(resource, target)
+    # Use the author's exact original image for the window and native package icons.
+    original_logo = ROOT / "HybridFileXfer-Android/app/src/main/res/drawable/logo.png"
+    logo_target = classes / "top/weixiansen574/hybridfilexfer/desktop/logo.png"
+    logo_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(original_logo, logo_target)
     jar_dir = BUILD / "jar"
     jar_dir.mkdir(parents=True, exist_ok=True)
     jar_path = jar_dir / "HybridFileXfer.jar"

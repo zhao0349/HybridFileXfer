@@ -5,6 +5,11 @@ console. The package includes its Java runtime. A standalone JAR can be started
 with `java -jar HybridFileXfer.jar`; Java 8 or newer is required.
 The FlatLaf interface uses consistent flat controls and rounded cards across
 platforms. The UI library is included in both the standalone JAR and app image.
+The appearance selector defaults to **System**, follows subsequent OS appearance
+changes, and also offers persistent **Light** and **Dark** choices. Switching
+appearance preserves connection settings and active transfers. If the desktop
+does not expose an appearance preference, the initial fallback is light.
+The header, window and packaged application use the original author's logo.
 
 Open the desktop first, choose USB/ADB or a phone network address, and choose a
 computer folder. **Wait & connect** keeps the window available until the phone is
@@ -28,8 +33,11 @@ shared ADB server.
 Pairing secrets are not stored in preferences or history. Optional local history
 contains up to 100 task summaries in `~/.hybridfilexfer/history.tsv`, without
 device identifiers or file paths. The diagnostics tab keeps bounded session logs
-in memory; the Save button exports them locally when requested. Diagnostics may
-include transferred paths.
+in memory; the Save button opens the operating system's native save dialog and
+exports UTF-8 text locally when requested. Diagnostics support Chinese text and
+can be selected and copied without displaying an editing caret. Diagnostics may
+include transferred paths. Keyboard focus uses a contrasting outline on buttons,
+input controls and checkboxes; the activity tabs are keyboard accessible.
 
 ## Command line
 

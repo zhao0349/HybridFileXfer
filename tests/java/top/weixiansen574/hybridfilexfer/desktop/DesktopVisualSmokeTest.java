@@ -55,6 +55,8 @@ public final class DesktopVisualSmokeTest {
                 render(frame, destination.resolveSibling("ui-minimum.png"));
                 serverPort.setValue(65535); frame.validate();
                 assertSpinnerText(serverPort);
+                assertVisible((JComponent) field(desktop, "reconnect"), "Reconnect preference with maximum port");
+                assertVisible((JComponent) field(desktop, "launchPhone"), "Phone launch preference with maximum port");
                 render(frame, destination.resolveSibling("ui-maximum-port.png"));
                 serverPort.setValue(5740);
                 JScrollPane content = (JScrollPane) field(desktop, "contentScroll");

@@ -297,7 +297,12 @@ public final class DesktopApp {
 
         JPanel connectionBottom = transparent(new BorderLayout(0, 8));
         JPanel preferences = transparent(new BorderLayout(12, 0));
-        preferences.add(line(reconnect, launchPhone), BorderLayout.WEST);
+        JPanel connectionPreferences = transparent(null);
+        connectionPreferences.setLayout(new BoxLayout(connectionPreferences, BoxLayout.X_AXIS));
+        connectionPreferences.add(reconnect);
+        connectionPreferences.add(Box.createHorizontalStrut(12));
+        connectionPreferences.add(launchPhone);
+        preferences.add(connectionPreferences, BorderLayout.WEST);
         JButton more = new JButton(text("高级设置", "Advanced settings"));
         more.putClientProperty("JButton.buttonType", "borderless");
         more.setMargin(new Insets(6, 12, 6, 12));

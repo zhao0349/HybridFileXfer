@@ -2,7 +2,7 @@ name: Build and verify
 on:
   workflow_dispatch:
   push:
-    branches: ['main', 'codex/**']
+    branches: ['main']
   pull_request:
 permissions:
   contents: read
@@ -38,6 +38,10 @@ jobs:
             .build/test-results/*
           if-no-files-found: error
           retention-days: 14
+      - name: Check legacy Windows launcher
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: dotnet build HybridFileXferLauncher/HybridFileXferLauncher.csproj --configuration Release
   android:
     runs-on: ubuntu-24.04
     steps:

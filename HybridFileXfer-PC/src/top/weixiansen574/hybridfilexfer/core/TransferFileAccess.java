@@ -8,6 +8,8 @@ import top.weixiansen574.hybridfilexfer.core.bean.RemoteFile;
 
 /** Filesystem operations are performed by the privileged IO process on Android. */
 public interface TransferFileAccess {
+    default void beginSession() throws IOException {}
+    default void cancelPendingOperations() {}
     final class Handle implements Closeable {
         public final FileChannel channel;
         private final Closeable owner;

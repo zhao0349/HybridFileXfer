@@ -27,5 +27,7 @@ interface IIOService {
     String abandonTransferFile(String token, boolean keep) = 26;
     String createTransferDirectory(String root, String relative, long modified) = 27;
     String[] canonicalTransferPath(String path) = 28;
+    void beginTransferFileSession() = 29;
+    void cancelPendingTransferOperations() = 30;
     void destroy() = 16777114;
 }

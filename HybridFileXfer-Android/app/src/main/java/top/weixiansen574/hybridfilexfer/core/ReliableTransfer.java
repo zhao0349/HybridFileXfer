@@ -38,8 +38,9 @@ public final class ReliableTransfer {
     });
 
     public ReliableTransfer(TransferFileAccess fs,DataByteChannel control,List<TransferConnection> connections,
-                            LinkedBlockingDeque<ByteBuffer> buffers,TransferFileCallback callback) {
+                            LinkedBlockingDeque<ByteBuffer> buffers,TransferFileCallback callback) throws IOException {
         this.fs=fs; this.control=control; this.connections=connections; this.buffers=buffers; this.callback=callback;
+        fs.beginSession();
     }
     public TransferSummary getSummary() { return summary; }
     public void cancel() {
@@ -50,6 +51,7 @@ public final class ReliableTransfer {
         for (TransferConnection c:connections) close(c.channel);
         Thread t=owner;
         if (t!=null && t!=Thread.currentThread()) t.interrupt();
+        fs.cancelPendingOperations();
     }
     private void checkCancelled() throws IOException {
         if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new IOException("Transfer cancelled");
@@ -296,7 +298,12 @@ public final class ReliableTransfer {
             if (outcome!=1) failure=sourceMessage.isEmpty()?"Transfer interrupted; verified prefix retained":sourceMessage;
             if (state.prefix!=size) failure="Missing file blocks; verified prefix retained";
             if (failure==null) {
-                try { phase(options.verifySha256?"verifying":"committing"); fs.commit(token,options.verifySha256); committed=true; }
+                try {
+                    checkCancelled();
+                    phase(options.verifySha256?"verifying":"committing");
+                    checkCancelled();
+                    fs.commit(token,options.verifySha256); committed=true;
+                }
                 catch (IOException e) { failure=e.toString(); }
             }
             if (outcome==2) { fs.abandon(token,false); token=""; }

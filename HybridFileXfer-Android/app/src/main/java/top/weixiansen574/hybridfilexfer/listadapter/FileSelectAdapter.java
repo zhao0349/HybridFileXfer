@@ -191,7 +191,7 @@ public abstract class FileSelectAdapter extends RecyclerView.Adapter<FileSelectA
         }
 
         itemView.setOnLongClickListener(v -> {
-            int index = holder.getBindingAdapterPosition();
+            int index = holder.getAdapterPosition();
             if (index <= 0) return true;
             if (selectionAnchor > 0 && isSelectMode()) {
                 for (int i = Math.min(selectionAnchor, index); i <= Math.max(selectionAnchor, index); i++) {

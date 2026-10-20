@@ -10,6 +10,10 @@ import top.weixiansen574.hybridfilexfer.core.bean.RemoteFile;
 public abstract class LocalTransferFileAccess implements TransferFileAccess {
     private static final String MAGIC = "HybridFileXfer-stage-4";
     private final Map<String,Stage> stages = new HashMap<>();
+    private volatile boolean cancellationRequested;
+    @Override public void beginSession() { cancellationRequested=false; }
+    // Binder cancellation must not wait for the monitor held by prepare/commit while hashing.
+    @Override public void cancelPendingOperations() { cancellationRequested=true; }
     private static final class Stage {
         File root, target, part, meta, lockPath;
         String identity, hash;
@@ -70,6 +74,7 @@ public abstract class LocalTransferFileAccess implements TransferFileAccess {
     @Override public synchronized Prepared prepare(String rootPath, String relative, String identity, long size,
                                                    long modified, String hash, TransferOptions options) throws IOException {
         options.validate();
+        if (cancellationRequested) throw new IOException("Cancelled");
         if (size < 0 || identity == null || !identity.matches("[0-9a-f]{64}")
                 || (!hash.isEmpty() && !hash.matches("[0-9a-f]{64}")))
             throw new IOException("Invalid file metadata");
@@ -167,6 +172,7 @@ public abstract class LocalTransferFileAccess implements TransferFileAccess {
         assertOwnedPath(s.part); assertOwnedPath(s.target);
         if (verifySha256 && (s.hash.isEmpty() || !s.hash.equals(hashLocal(s.part,s.size))))
             throw new IOException("Final SHA-256 verification failed; partial file retained");
+        if (cancellationRequested || Thread.currentThread().isInterrupted()) throw new IOException("Cancelled");
         if (!s.overwrite && s.target.exists()) throw new IOException("Destination appeared during transfer; preserved");
         if (s.modified>0 && !s.part.setLastModified(s.modified)) throw new IOException("Cannot preserve modification time");
         atomicMove(s.part,s.target,s.overwrite);
@@ -189,8 +195,10 @@ public abstract class LocalTransferFileAccess implements TransferFileAccess {
         if (s==null) throw new IOException("Unknown staging token");
         return s;
     }
-    private static String hashLocal(File file,long length) throws IOException {
-        try (FileInputStream in=new FileInputStream(file)) { return TransferHashes.hash(in.getChannel(),length); }
+    private String hashLocal(File file,long length) throws IOException {
+        try (FileInputStream in=new FileInputStream(file)) {
+            return TransferHashes.hash(in.getChannel(),length,() -> cancellationRequested);
+        }
     }
     private static Properties load(File file) throws IOException {
         if (file.length()>16384) throw new IOException("Oversized staging metadata");

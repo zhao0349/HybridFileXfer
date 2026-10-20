@@ -46,6 +46,14 @@ public class ClientActivity extends AppCompatActivity implements ClientSession.L
 
     @Override public void onSessionChanged() {
         state.setText(session.state);
+        java.util.Iterator<Map.Entry<String, View>> stale = channelViews.entrySet().iterator();
+        while (stale.hasNext()) {
+            Map.Entry<String, View> entry = stale.next();
+            if (!session.channels.containsKey(entry.getKey())) {
+                connections.removeView(entry.getValue());
+                stale.remove();
+            }
+        }
         long totalUpload = 0, totalDownload = 0;
         for (Map.Entry<String, ClientSession.Channel> entry : session.channels.entrySet()) {
             View item = channelViews.get(entry.getKey());

@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import re
+import platform
 import shutil
 import subprocess
 import sys
@@ -119,13 +120,30 @@ def main():
              "--input", jar_dir, "--main-jar", jar_path.name, "--dest", image_dir,
              "--app-version", "4.0.0", "--vendor", "HybridFileXfer contributors",
              "--java-options", "-Dfile.encoding=UTF-8"])
+        executable = image_dir / "HybridFileXfer"
+        if sys.platform == "win32":
+            executable /= "HybridFileXfer.exe"
+            # A console-subsystem executable would reintroduce the black CMD window.
+            import struct
+            pe = executable.read_bytes()
+            header = struct.unpack_from("<I", pe, 0x3c)[0]
+            if pe[header:header+4] != b"PE\0\0" or struct.unpack_from("<H", pe, header+24+68)[0] != 2:
+                raise RuntimeError("Packaged Windows launcher is not a GUI executable")
+        elif sys.platform == "darwin":
+            executable = image_dir / "HybridFileXfer.app/Contents/MacOS/HybridFileXfer"
+        else:
+            executable /= "bin/HybridFileXfer"
+        run([executable, "--version"], timeout=30)
         documentation = image_dir / "Documentation"
         documentation.mkdir()
         for path in (ROOT / "LICENSE.txt", ROOT / "README.md", ROOT / "HybridFileXfer-PC/DESKTOP.md"):
             if path.is_file():
-                shutil.copy2(path, documentation / path.name)
-        platform = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
-        archive = distributions / ("HybridFileXfer-4.0.0-" + platform + ".zip")
+                target = documentation / path.relative_to(ROOT)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, target)
+        shutil.copytree(ROOT / "docs", documentation / "docs")
+        system = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
+        archive = distributions / ("HybridFileXfer-4.0.0-" + system + "-" + platform.machine().lower() + ".zip")
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
             for path in image_dir.rglob("*"):
                 if path.is_file():

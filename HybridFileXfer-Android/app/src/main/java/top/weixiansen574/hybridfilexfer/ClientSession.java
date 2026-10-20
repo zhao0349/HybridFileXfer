@@ -177,6 +177,7 @@ public final class ClientSession {
         generation++;
         active = false;
         connecting = false;
+        for (Channel channel : channels.values()) channel.uploadSpeed = channel.downloadSpeed = 0;
         if (client != null) {
             client.close();
             client = null;

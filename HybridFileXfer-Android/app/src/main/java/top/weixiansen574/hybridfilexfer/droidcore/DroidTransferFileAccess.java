@@ -14,6 +14,12 @@ import top.weixiansen574.hybridfilexfer.core.bean.RemoteFile;
 public final class DroidTransferFileAccess implements TransferFileAccess {
     private final IIOService io;
     public DroidTransferFileAccess(IIOService io) { this.io=io; }
+    @Override public void beginSession() throws IOException {
+        try { io.beginTransferFileSession(); } catch (RemoteException e) { throw new IOException(e); }
+    }
+    @Override public void cancelPendingOperations() {
+        try { io.cancelPendingTransferOperations(); } catch (RemoteException ignored) {}
+    }
     private static void checked(String error) throws IOException { if (error!=null) throw new IOException(error); }
     @Override public String canonicalPath(String path) throws IOException {
         try {

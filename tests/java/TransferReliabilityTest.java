@@ -325,6 +325,34 @@ public final class TransferReliabilityTest {
             fs.abandon(p.token,false);
         } finally { cleanup(target); }
     }
+    private static void filesystemCancellation() throws Exception {
+        Path target=temp("cancel-filesystem");
+        LocalTransferFileAccess fs=new JdkTransferFileAccess();
+        try {
+            fs.beginSession();
+            TransferFileAccess.Prepared p=fs.prepare(target.toString(),"empty.bin",TransferHashes.text("empty"),0,1,
+                    TransferHashes.text(""),options());
+            fs.cancelPendingOperations();
+            boolean cancelled=false;
+            try { fs.commit(p.token,false); } catch(IOException e) { cancelled=true; }
+            check(cancelled && !Files.exists(target.resolve("empty.bin")),"Filesystem cancellation allowed final commit");
+            fs.abandon(p.token,true);
+            fs.beginSession();
+            p=fs.prepare(target.toString(),"empty.bin",TransferHashes.text("empty"),0,1,TransferHashes.text(""),options());
+            fs.commit(p.token,true);
+            check(Files.exists(target.resolve("empty.bin")),"New session inherited old cancellation");
+            Path hashSource=target.resolve("hash.bin");
+            Files.write(hashSource,new byte[MB]);
+            try (FileChannel input=FileChannel.open(hashSource,StandardOpenOption.READ)) {
+                int[] polls={0};
+                boolean stopped=false;
+                try { TransferHashes.hash(input,MB,() -> ++polls[0]>=3); }
+                catch(IOException e) { stopped=true; }
+                check(stopped && polls[0]==3 && !Thread.currentThread().isInterrupted(),
+                        "Filesystem hash ignored cancellation from a different execution context");
+            }
+        } finally { cleanup(target); }
+    }
     private static void cancellation() throws Exception {
         Path source=temp("cancel-source"),target=temp("cancel-target");
         Pair control=new Pair(),data=new Pair();
@@ -374,6 +402,7 @@ public final class TransferReliabilityTest {
         sourceMutation();
         safeNamesAndBoundaries();
         badFinalHashAndLargeMetadata();
+        filesystemCancellation();
         cancellation();
         System.out.println("TransferReliabilityTest: "+passed+" assertions passed");
     }

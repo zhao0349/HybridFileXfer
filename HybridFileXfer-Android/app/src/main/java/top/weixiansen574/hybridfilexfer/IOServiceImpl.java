@@ -49,6 +49,8 @@ public class IOServiceImpl extends IIOService.Stub {
                     Long.toString(file.getSize()), Boolean.toString(file.isDirectory())};
         } catch (IOException e) { return new String[]{e.toString()}; }
     }
+    public void beginTransferFileSession() { transferFiles.beginSession(); }
+    public void cancelPendingTransferOperations() { transferFiles.cancelPendingOperations(); }
     public String[] canonicalTransferPath(String path) {
         try { return new String[]{transferFiles.canonicalPath(path), ""}; }
         catch (IOException e) { return new String[]{"",e.toString()}; }

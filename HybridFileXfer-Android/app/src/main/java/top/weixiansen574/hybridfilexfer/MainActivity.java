@@ -456,6 +456,17 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     public boolean checkShizukuOrReq(int mode) {
+        try {
+            return checkShizukuPermission(mode);
+        } catch (RuntimeException e) {
+            // The Shizuku process may die between pingBinder and the permission/UID RPC.
+            startApproved = false;
+            Toast.makeText(this, R.string.io_disconnected, Toast.LENGTH_LONG).show();
+            return true;
+        }
+    }
+
+    private boolean checkShizukuPermission(int mode) {
         if (!Shizuku.pingBinder()) {
             showInstallShizukuDialog(context);
             return true;

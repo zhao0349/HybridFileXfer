@@ -32,10 +32,10 @@ public class IOService extends Service {
     public static synchronized Shizuku.UserServiceArgs getUserServiceArgs(Context context){
         if (userServiceArgs == null) {
             userServiceArgs = new Shizuku.UserServiceArgs(new ComponentName(context, IOServiceImpl.class))
-                    .daemon(true)
+                    .daemon(false)
                     .processNameSuffix("IOService")
                     .debuggable(false)
-                    .version(1);
+                    .version(BuildConfig.VERSION_CODE);
         }
         return userServiceArgs;
     }

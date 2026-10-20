@@ -15,7 +15,7 @@
             <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
                 android:text="@string/connection_channels" android:textColor="@color/fond" />
             <LinearLayout android:id="@+id/refresh" android:layout_width="wrap_content"
-                android:layout_height="48dp" android:gravity="center_vertical" android:paddingHorizontal="8dp"
+                android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="8dp" android:paddingEnd="8dp"
                 android:clickable="true" android:focusable="true" android:foreground="?selectableItemBackground">
                 <ImageView android:layout_width="24dp" android:layout_height="24dp"
                     android:contentDescription="@string/refresh" android:src="@drawable/baseline_refresh_24" />

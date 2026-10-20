@@ -24,12 +24,16 @@ public final class TransferHashes {
         try (TransferFileAccess.Handle handle = access.openRead(path)) { return hash(handle.channel, length); }
     }
     public static String hash(FileChannel channel, long length) throws IOException {
+        return hash(channel,length,() -> false);
+    }
+    public static String hash(FileChannel channel,long length,java.util.function.BooleanSupplier cancelled) throws IOException {
         if (length < 0) throw new IOException("Negative file length");
+        if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) throw new IOException("Cancelled");
         MessageDigest digest = digest();
         ByteBuffer b = ByteBuffer.allocate(128 * 1024);
         long position = 0;
         while (position < length) {
-            if (Thread.currentThread().isInterrupted()) throw new IOException("Cancelled");
+            if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) throw new IOException("Cancelled");
             b.clear();
             b.limit((int)Math.min(b.capacity(), length - position));
             int n = channel.read(b, position);

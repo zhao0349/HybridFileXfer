@@ -27,6 +27,12 @@ interface IIOService {
 public class IOServiceImpl extends IIOService.Stub {
     private final top.weixiansen574.hybridfilexfer.core.LocalTransferFileAccess transferFiles =
             new top.weixiansen574.hybridfilexfer.core.LocalTransferFileAccess() {
+                @Override protected String fileIdentity(File file) throws IOException {
+                    try {
+                        android.system.StructStat stat=android.system.Os.stat(file.getPath());
+                        return stat.st_dev+":"+stat.st_ino;
+                    } catch (android.system.ErrnoException e) { throw new IOException(e); }
+                }
                 @Override protected boolean sameFile(File first, File second) throws IOException {
                     try {
                         android.system.StructStat a=android.system.Os.stat(first.getPath());
@@ -85,9 +91,47 @@ public class IOServiceImpl extends IIOService.Stub {
             return p.encode();
         }
     }
-    public ParcelFileDescriptor openTransferStage(String token) {
-        try { return ParcelFileDescriptor.open(new File(transferFiles.stagingPath(token)), ParcelFileDescriptor.MODE_READ_WRITE); }
-        catch (IOException e) { return null; }
+    public ParcelFileDescriptor openTransferStage(String token, String handleId) {
+        try { return ParcelFileDescriptor.open(new File(transferFiles.reserveExternalHandle(token,handleId,false)), ParcelFileDescriptor.MODE_READ_WRITE); }
+        catch (IOException e) {
+            try { transferFiles.closeExternalHandle(token,handleId); } catch (IOException ignored) {}
+            return null;
+        }
+    }
+    public String sealTransferFile(String token) {
+        try { transferFiles.seal(token); return null; } catch (IOException e) { return e.toString(); }
+    }
+    public ParcelFileDescriptor openSealedTransferFile(String token, String handleId) {
+        try { return ParcelFileDescriptor.open(new File(transferFiles.reserveExternalHandle(token,handleId,true)), ParcelFileDescriptor.MODE_READ_ONLY); }
+        catch (IOException e) {
+            try { transferFiles.closeExternalHandle(token,handleId); } catch (IOException ignored) {}
+            try { transferFiles.releaseVerification(token); } catch (IOException ignored) {}
+            return null;
+        }
+    }
+    public String closeTransferHandle(String token, String handleId) {
+        try { transferFiles.closeExternalHandle(token,handleId); return null; }
+        catch (IOException e) { return e.toString(); }
+    }
+    public String completeTransferVerification(String token, String expected, String actual) {
+        try { transferFiles.completeVerification(token,expected,actual); return null; }
+        catch (IOException e) { return e.toString(); }
+    }
+    public String releaseTransferVerification(String token) {
+        try { transferFiles.releaseVerification(token); return null; } catch (IOException e) { return e.toString(); }
+    }
+    public String resetTransferFileForRetry(String token) {
+        try { transferFiles.resetForRetry(token); return null; } catch (IOException e) { return e.toString(); }
+    }
+    public String[] publishUnverifiedTransferFile(String token) {
+        try { return new String[]{transferFiles.publishUnverified(token),""}; }
+        catch (IOException e) { return new String[]{"",e.toString()}; }
+    }
+    public String retainUnverifiedTransferFile(String token) {
+        try { transferFiles.retainUnverified(token); return null; } catch (IOException e) { return e.toString(); }
+    }
+    public String endTransferFileSession() {
+        try { transferFiles.endSession(); return null; } catch (IOException e) { return e.toString(); }
     }
     public String checkpointTransferFile(String token, long offset) {
         try { transferFiles.checkpoint(token, offset); return null; }

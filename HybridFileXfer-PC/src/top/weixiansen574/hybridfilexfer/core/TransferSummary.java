@@ -5,7 +5,10 @@ import java.util.List;
 
 public final class TransferSummary {
     public long completedFiles, skippedFiles, failedFiles, transferredBytes, resumedBytes;
-    public boolean cancelled;
+    /** Final distinct-file counts, never inflated by repeat verification rounds. */
+    public long verifiedFiles, verificationFailedFiles, unverifiedFiles, retriedFiles;
+    public int verificationRounds;
+    public boolean cancelled, verificationStopped, verificationEnabled;
     public final List<String> failures = new ArrayList<>();
     public final List<String> warnings = new ArrayList<>();
     public void addWarning(String warning) {
@@ -13,5 +16,7 @@ public final class TransferSummary {
         if (warnings.size()<100) warnings.add(message);
         else warnings.set(99,"Additional filesystem warnings were omitted.");
     }
-    public boolean isSuccessful() { return !cancelled && failedFiles == 0; }
+    public boolean isSuccessful() {
+        return !cancelled && !verificationStopped && failedFiles == 0 && unverifiedFiles == 0;
+    }
 }

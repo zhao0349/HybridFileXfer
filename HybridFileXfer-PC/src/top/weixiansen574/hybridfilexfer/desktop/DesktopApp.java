@@ -3,6 +3,7 @@ package top.weixiansen574.hybridfilexfer.desktop;
 import top.weixiansen574.hybridfilexfer.core.TransferOptions;
 import top.weixiansen574.hybridfilexfer.core.TransferProgress;
 import top.weixiansen574.hybridfilexfer.core.TransferSummary;
+import top.weixiansen574.hybridfilexfer.core.VerificationProgress;
 import top.weixiansen574.hybridfilexfer.core.bean.TrafficInfo;
 
 import javax.swing.*;
@@ -43,7 +44,7 @@ public final class DesktopApp {
     private final JCheckBox reconnect = new JCheckBox(text("等待手机并自动重新连接", "Wait for phone and reconnect automatically"), true);
     private final JCheckBox launchPhone = new JCheckBox(text("通过 ADB 打开手机 App（手机上确认）", "Open phone app through ADB (confirm on phone)"), true);
     private final JCheckBox burst = new JCheckBox(text("实验性 ADB burst mode", "Experimental ADB burst mode"));
-    private final JCheckBox verify = new JCheckBox(text("校验 SHA-256", "Verify SHA-256"), true);
+    private final JCheckBox verify = new JCheckBox(text("传输后校验 SHA-256（可选）", "SHA-256 after transfer (optional)"), false);
     private final JCheckBox resume = new JCheckBox(text("恢复匹配的未完成文件", "Resume matching partial files"), true);
     private final JCheckBox incremental = new JCheckBox(text("跳过已相同的文件", "Skip identical files"));
     private final JCheckBox prescan = new JCheckBox(text("传输前统计总量（大目录需要时间）", "Count totals before transfer (large folders take time)"));
@@ -73,14 +74,17 @@ public final class DesktopApp {
     private final List<JComponent> connectionControls = new ArrayList<>();
     private final ConnectionController controller;
     private final AtomicReference<TransferProgress> latestProgress = new AtomicReference<>();
+    private final AtomicReference<VerificationProgress> latestVerification = new AtomicReference<>();
     private final ConcurrentLinkedQueue<String> pendingLogs = new ConcurrentLinkedQueue<>();
     private final AtomicInteger pendingLogCount = new AtomicInteger(), omittedLogs = new AtomicInteger();
     private final Timer progressTimer = new Timer(100, event -> { flushProgress(); flushLogs(); });
     private Preferences prefs;
     private boolean uploading, taskFailed, transferActive, disposalStarted;
+    private boolean verificationActive, verificationStopRequested, taskFinished;
     private volatile boolean closing;
     private long taskStarted, lastTransferredBytes;
     private String taskResult = "", sessionSecret = "", automaticSecret = "";
+    private String transferResult = "", verificationResult = "";
     private volatile AdbBridge auxiliaryAdb;
     private int refreshGeneration;
     private int phoneRequestGeneration;
@@ -119,7 +123,10 @@ public final class DesktopApp {
                 for (TrafficInfo info : values) snapshot.add(new TrafficInfo(info.iName, info.uploadTraffic, info.downloadTraffic));
                 ui(() -> updateSpeeds(snapshot));
             }
-            @Override public void onTransferStarted(boolean upload) { ui(() -> started(upload)); }
+            @Override public void onTransferStarted(boolean upload) {
+                latestProgress.set(null); latestVerification.set(null);
+                ui(() -> started(upload));
+            }
             @Override public void onProgress(TransferProgress value) {
                 TransferProgress copy = new TransferProgress();
                 copy.transferredBytes = value.transferredBytes; copy.totalBytes = value.totalBytes;
@@ -128,6 +135,10 @@ public final class DesktopApp {
                 latestProgress.set(copy);
             }
             @Override public void onSummary(TransferSummary summary) { ui(() -> { flushProgress(); showSummary(summary); }); }
+            @Override public void onVerificationProgress(VerificationProgress value) { latestVerification.set(value); }
+            @Override public void onVerificationStopped(boolean upload, long bytes, long millis) {
+                ui(() -> { flushProgress(); verificationStopped(upload, bytes, millis); });
+            }
             @Override public void onComplete(boolean upload, long bytes, long millis) { ui(() -> { flushProgress(); completed(upload, bytes, millis); }); }
             @Override public void onTransferFailed(String message) { ui(() -> { flushProgress(); failed(message); }); }
             @Override public void onFinished() { ui(() -> { setBusy(false); if (closing) dispose(); }); }
@@ -408,7 +419,7 @@ public final class DesktopApp {
                 refresh, browse, openPhone, reconnect, launchPhone, burst, conflict, verify, resume, incremental, prescan, more));
         connect.addActionListener(e -> begin());
         stop.addActionListener(e -> controller.close());
-        cancelTransfer.addActionListener(e -> { cancelTransfer.setEnabled(false); controller.cancelTransfer(); phase.setText(text("正在安全停止传输…", "Stopping the transfer safely…")); });
+        cancelTransfer.addActionListener(e -> stopCurrentTask());
         mode.addActionListener(e -> modeChanged());
         refresh.addActionListener(e -> refreshDevices());
         browse.addActionListener(e -> chooseFolder());
@@ -428,6 +439,9 @@ public final class DesktopApp {
         row(panel, 4, text("手机服务端口", "Phone service port"), advancedPort);
         row(panel, 5, "", burst);
         row(panel, 6, "", label(text("实验选项仅影响本程序启动的 ADB 进程。", "The experimental option only affects this app's ADB processes."), 12f, false, MUTED));
+        row(panel, 7, "", label(text("CRC32 分块校验始终启用。SHA-256 较慢，可随时停止。",
+                "CRC32 block checks are always on. SHA-256 takes time and can be stopped."), 12f, false, MUTED));
+        verify.setToolTipText(text("任一端勾选即可；全部数据传完后并行校验，每轮结束后重发不匹配的文件。", "Enable on either device. Verify after all data arrives; resend mismatches after each round."));
         return panel;
     }
 
@@ -674,6 +688,8 @@ public final class DesktopApp {
                 badge = text("已连接", "Connected"); foreground = () -> GREEN; background = () -> GREEN_SOFT; break;
             case TRANSFERRING:
                 badge = text("正在传输", "Transferring"); foreground = () -> GREEN; background = () -> GREEN_SOFT; break;
+            case VERIFYING:
+                badge = text("文件校验", "Verifying"); break;
             case ERROR:
                 badge = text("连接异常", "Connection issue"); foreground = () -> RED; background = () -> RED_SOFT; break;
             case STOPPING:
@@ -689,6 +705,9 @@ public final class DesktopApp {
     }
     private void started(boolean upload) {
         uploading = upload; taskStarted = System.currentTimeMillis(); taskFailed = false; transferActive = true; taskResult = ""; lastTransferredBytes = 0;
+        transferResult = ""; verificationResult = ""; phase.setToolTipText(null);
+        verificationActive = false; verificationStopRequested = false; taskFinished = false;
+        cancelTransfer.setText(text("取消传输", "Cancel transfer"));
         transferBadge.state(upload ? text("电脑 → 手机", "Computer → Phone") : text("手机 → 电脑", "Phone → Computer"), () -> BLUE, () -> BLUE_SOFT);
         progressPercent.setText("…");
         bindForeground(progress, () -> BLUE);
@@ -696,7 +715,9 @@ public final class DesktopApp {
         phase.setText(" "); file.setText(" "); cancelTransfer.setEnabled(true);
     }
     private void showProgress(TransferProgress value) {
+        if (taskFinished) return;
         lastTransferredBytes = value.transferredBytes;
+        if (verificationActive) return;
         if (value.totalBytes > 0) {
             progress.setIndeterminate(false);
             progress.setValue((int) Math.min(1000, value.transferredBytes * 1000.0 / value.totalBytes));
@@ -716,6 +737,48 @@ public final class DesktopApp {
     private void flushProgress() {
         TransferProgress value = latestProgress.getAndSet(null);
         if (value != null) showProgress(value);
+        VerificationProgress verification = latestVerification.getAndSet(null);
+        if (verification != null) showVerification(verification);
+    }
+    private void showVerification(VerificationProgress value) {
+        if (!transferActive || taskFinished) return;
+        verificationActive = true;
+        verificationStopRequested |= "stopping".equals(value.phase);
+        cancelTransfer.setText(text("停止校验与重试", "Stop verification & retries"));
+        cancelTransfer.setEnabled(!verificationStopRequested);
+        boolean retrying = "retrying".equals(value.phase);
+        String heading = verificationStopRequested ? text("正在停止校验…", "Stopping verification…")
+                : retrying ? text("正在重发不匹配的文件", "Resending mismatched files")
+                : "waiting-peer".equals(value.phase) ? text("等待对端校验", "Waiting for peer verification")
+                : text("正在校验 SHA-256", "Verifying SHA-256");
+        transferBadge.state(heading, () -> BLUE, () -> BLUE_SOFT);
+        bindForeground(progress, () -> BLUE);
+        progress.setIndeterminate(retrying || verificationStopRequested || value.totalFiles == 0);
+        if (!progress.isIndeterminate()) {
+            progress.setValue((int) Math.min(1000, value.checkedFiles * 1000.0 / value.totalFiles));
+        }
+        progressPercent.setText(value.checkedFiles + " / " + value.totalFiles);
+        progress.setString(heading + text(" · 第 ", " · Round ") + value.round + text(" 轮", ""));
+        phase.setText(text("本轮已校验 ", "Checked this round ") + value.checkedFiles
+                + text(" · 通过 ", " · passed ") + value.verifiedFiles
+                + text(" · 失败 ", " · failed ") + value.failedFiles
+                + text(" · 未校验 ", " · unchecked ") + Math.max(0, value.totalFiles - value.checkedFiles));
+        file.setText(value.currentPath == null ? " " : value.currentPath);
+        file.setToolTipText(value.currentPath);
+    }
+    private void stopCurrentTask() {
+        if (!transferActive || taskFinished) return;
+        // Consume a pending first verification event before deciding which cancellation applies.
+        flushProgress();
+        cancelTransfer.setEnabled(false);
+        if (verificationActive) {
+            verificationStopRequested = true;
+            controller.stopVerification();
+            progress.setString(text("正在停止校验与重试…", "Stopping verification and retries…"));
+        } else {
+            controller.cancelTransfer();
+            phase.setText(text("正在安全停止传输…", "Stopping the transfer safely…"));
+        }
     }
     private void flushLogs() {
         StringBuilder batch = new StringBuilder();
@@ -748,12 +811,26 @@ public final class DesktopApp {
                 + text(" · 失败 ", " · failed ") + summary.failedFiles
                 + (summary.warnings.isEmpty() ? "" : text(" · 提醒 ", " · warnings ") + summary.warnings.size())
                 + (summary.cancelled ? text(" · 已取消", " · cancelled") : "");
-        phase.setText(taskResult);
+        transferResult = taskResult;
+        if (summary.verificationEnabled) {
+            verificationResult = text("SHA 通过 ", "SHA passed ") + summary.verifiedFiles
+                    + text(" / 失败 ", " / failed ") + summary.verificationFailedFiles
+                    + text(" / 未校验 ", " / unchecked ") + summary.unverifiedFiles
+                    + text(" · 重发 ", " · resent ") + summary.retriedFiles;
+            taskResult += " · " + verificationResult + text(" · 校验轮数 ", " · rounds ") + summary.verificationRounds
+                    + (summary.verificationStopped ? text(" · 已停止校验", " · verification stopped") : "");
+        } else {
+            verificationResult = text("未启用 SHA-256", "SHA-256 disabled");
+            taskResult += " · " + verificationResult;
+        }
+        phase.setText(verificationResult);
+        phase.setToolTipText(taskResult);
         appendLog(taskResult);
         for (String failure : summary.failures) appendLog(failure);
         for (String warning : summary.warnings) appendLog(text("提醒：", "Warning: ") + warning);
     }
     private void completed(boolean upload, long bytes, long millis) {
+        taskFinished = true; latestProgress.set(null); latestVerification.set(null);
         transferActive = false; cancelTransfer.setEnabled(false); progress.setIndeterminate(false);
         if (!taskFailed) progress.setValue(1000);
         progressPercent.setText(taskFailed ? text("未完成", "Incomplete") : "100%");
@@ -761,12 +838,24 @@ public final class DesktopApp {
         bindForeground(progress, () -> failed ? RED : GREEN);
         transferBadge.state(taskFailed ? text("未完成", "Incomplete") : text("传输完成", "Completed"), () -> failed ? RED : GREEN, () -> failed ? RED_SOFT : GREEN_SOFT);
         String result = taskResult.isEmpty() ? taskFailed ? text("未完成", "Incomplete") : text("完成", "Completed") : taskResult;
-        progress.setString(result);
-        phase.setText(size(bytes) + " · " + duration(millis) + " · " + size(millis <= 0 ? 0 : (long) (bytes * 1000.0 / millis)) + "/s");
+        progress.setString(transferResult.isEmpty() ? result : transferResult);
+        phase.setText(verificationResult.isEmpty() ? size(bytes) + " · " + duration(millis) : verificationResult);
         addHistory(upload, result, bytes, millis);
         Toolkit.getDefaultToolkit().beep();
     }
+    private void verificationStopped(boolean upload, long bytes, long millis) {
+        taskFinished = true; transferActive = false;
+        latestProgress.set(null); latestVerification.set(null);
+        cancelTransfer.setEnabled(false); progress.setIndeterminate(false);
+        progressPercent.setText(text("已停止", "Stopped"));
+        bindForeground(progress, () -> BLUE);
+        transferBadge.state(text("校验已停止", "Verification stopped"), () -> BLUE, () -> BLUE_SOFT);
+        progress.setString(text("已保留接收文件，请查看校验摘要", "Received files retained; review the verification summary"));
+        phase.setText(verificationResult);
+        addHistory(upload, taskResult, bytes, millis);
+    }
     private void failed(String message) {
+        taskFinished = true; latestProgress.set(null); latestVerification.set(null);
         taskFailed = true;
         transferBadge.state(text("传输未完成", "Incomplete"), () -> RED, () -> RED_SOFT);
         bindForeground(progress, () -> RED);

@@ -7,7 +7,7 @@ import top.weixiansen574.nio.DataByteChannel;
 public final class TransferOptions {
     public enum ConflictPolicy { OVERWRITE, SKIP, KEEP_BOTH }
     public ConflictPolicy conflictPolicy = ConflictPolicy.KEEP_BOTH;
-    public boolean verifySha256 = true;
+    public boolean verifySha256 = false;
     public boolean resume = true;
     public boolean incremental = false;
     public boolean prescan = false;

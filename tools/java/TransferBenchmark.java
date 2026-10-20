@@ -63,7 +63,7 @@ public final class TransferBenchmark {
             for(Path path:(Iterable<Path>)paths.sorted(Comparator.reverseOrder())::iterator) Files.deleteIfExists(path);
         }
     }
-    private static String measure(Path source,Path destination,List<RemoteFile> files,int channels,String scenario,int iteration)
+    private static String measure(Path source,Path destination,List<RemoteFile> files,int channels,String scenario,int iteration,boolean sha256)
             throws Exception {
         List<Pair> pairs=new ArrayList<>();
         ExecutorService executor=Executors.newFixedThreadPool(2);
@@ -81,7 +81,7 @@ public final class TransferBenchmark {
             receiver=new ReliableTransfer(new JdkTransferFileAccess(),new DataByteChannel(control.b),incoming,
                     new LinkedBlockingDeque<ByteBuffer>(),new Observer());
             TransferOptions options=new TransferOptions();
-            options.verifySha256=true; options.resume=true; options.prescan=true; options.timeoutSeconds=120;
+            options.verifySha256=sha256; options.resume=true; options.prescan=true; options.timeoutSeconds=120;
             ReliableTransfer a=sender,b=receiver;
             long started=System.nanoTime();
             Future<Boolean> receive=executor.submit(()->b.receive(options,true));
@@ -95,9 +95,9 @@ public final class TransferBenchmark {
                 throw new IOException("Benchmark transfer failed: "+summary.failures);
             double milliseconds=elapsed/1_000_000.0;
             double throughput=summary.transferredBytes/(1024.0*1024.0)/(elapsed/1_000_000_000.0);
-            return String.format(Locale.ROOT,"%s,%d,%d,%d,%.3f,%.3f,%d,%d,true,true",
+            return String.format(Locale.ROOT,"%s,%d,%d,%d,%.3f,%.3f,%d,%d,%b,true",
                     scenario,iteration,channels,summary.transferredBytes,milliseconds,throughput,
-                    summary.completedFiles,summary.failedFiles);
+                    summary.completedFiles,summary.failedFiles,sha256);
         } finally {
             if(sender!=null) sender.cancel(); if(receiver!=null) receiver.cancel();
             for(Pair pair:pairs) pair.close();
@@ -105,9 +105,11 @@ public final class TransferBenchmark {
         }
     }
     public static void main(String[] args) throws Exception {
-        if(args.length!=6) throw new IllegalArgumentException("largeMiB smallFiles smallKiB channelsCSV repetitions outputCSV");
+        if(args.length!=7) throw new IllegalArgumentException("largeMiB smallFiles smallKiB channelsCSV repetitions outputCSV sha256");
         int largeMiB=Integer.parseInt(args[0]),smallFiles=Integer.parseInt(args[1]),smallKiB=Integer.parseInt(args[2]);
         int repetitions=Integer.parseInt(args[4]);
+        if(!args[6].equals("true") && !args[6].equals("false")) throw new IllegalArgumentException("sha256 must be true or false");
+        boolean sha256=Boolean.parseBoolean(args[6]);
         if(largeMiB<1 || largeMiB>16384 || smallFiles<1 || smallFiles>100000 || smallKiB<1 || smallKiB>1024
                 || repetitions<1 || repetitions>20) throw new IllegalArgumentException("Benchmark dimensions out of bounds");
         List<Integer> counts=new ArrayList<>();
@@ -138,7 +140,7 @@ public final class TransferBenchmark {
                 if(repetition%2==0) Collections.reverse(order);
                 for(int channels:order) for(String scenario:Arrays.asList("large","small")) {
                     Path destination=Files.createDirectory(root.resolve(scenario+"-"+channels+"-"+repetition));
-                    String line=measure(source,destination,scenario.equals("large")?largeSet:smallSet,channels,scenario,repetition);
+                    String line=measure(source,destination,scenario.equals("large")?largeSet:smallSet,channels,scenario,repetition,sha256);
                     csv.write(line); csv.newLine(); csv.flush(); System.out.println(line);
                 }
             }

@@ -12,13 +12,14 @@ import top.weixiansen574.hybridfilexfer.core.callback.TransferFileCallback;
 import top.weixiansen574.nio.DataByteChannel;
 
 /**
- * Version 400: per-file control transaction, bounded parallel block window, durable-prefix ACKs.
+ * Version 401: CRC32 block transactions and optional deferred, bounded SHA-256 verification.
  * Failed data channels are retired; their unacknowledged blocks go back to the shared scheduler.
  * A transfer may be resumed across processes only after comparing the persisted prefix to source.
  */
 public final class ReliableTransfer {
     private static final int END=0, FILE=1, DIRECTORY=2, SOURCE_ERROR=3;
     private static final int BLOCK=10, FILE_END=11, ACK=12;
+    private static final int STORED=1, BAD_CRC=2, STORE_FAILED=3, VERIFY_STOPPED=4;
     private static final int MAX_WARNINGS=100,MAX_WARNING_LENGTH=1024;
     private final TransferFileAccess fs;
     private final DataByteChannel control;
@@ -26,11 +27,15 @@ public final class ReliableTransfer {
     private final LinkedBlockingDeque<ByteBuffer> buffers;
     private final TransferFileCallback callback;
     private final AtomicBoolean cancelled = new AtomicBoolean();
+    private final AtomicBoolean verificationStop = new AtomicBoolean();
+    private volatile boolean verificationStarted;
     private volatile Thread owner;
     private volatile boolean finished;
+    private boolean protocolFinished;
     private final List<Thread> liveWorkers=new CopyOnWriteArrayList<>();
     private final Map<TransferConnection,Long> channelTasks=new IdentityHashMap<>();
     private final TransferSummary summary = new TransferSummary();
+    private final List<VerificationCoordinator.File> verificationFiles=new ArrayList<>();
     private TransferOptions options;
     private long totalBytes=-1,totalFiles=-1;
     private volatile String currentPath="";
@@ -45,6 +50,10 @@ public final class ReliableTransfer {
         fs.beginSession();
     }
     public TransferSummary getSummary() { return summary; }
+    /** Soft stop is only available after the initial data phase, including repair rounds. */
+    public void stopVerification() {
+        if (verificationStarted && !finished) verificationStop.set(true);
+    }
     public void cancel() {
         if (finished) return;
         cancelled.set(true);
@@ -58,6 +67,19 @@ public final class ReliableTransfer {
     }
     private void checkCancelled() throws IOException {
         if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new IOException("Transfer cancelled");
+    }
+    private boolean verificationStopping() { return verificationStarted && verificationStop.get(); }
+    private static int crc32(ByteBuffer data) {
+        java.util.zip.CRC32 crc=new java.util.zip.CRC32();
+        // Transfer buffers are heap buffers. No extra file read, copy or network round-trip.
+        if (data.hasArray()) crc.update(data.array(),data.arrayOffset()+data.position(),data.remaining());
+        else {
+            // CRC32.update(ByteBuffer) requires Android API 26. This compatibility
+            // path is outside the normal heap-buffer transfer path and preserves the caller's view.
+            ByteBuffer view=data.duplicate();
+            while (view.hasRemaining()) crc.update(view.get() & 0xff);
+        }
+        return (int)crc.getValue();
     }
     private void notifySafely(Runnable action) { try { action.run(); } catch (RuntimeException ignored) { /* UI failure must not corrupt the wire. */ } }
     private void channelTask(TransferConnection channel,String path,boolean upload,long offset,long length,long size) {
@@ -133,6 +155,12 @@ public final class ReliableTransfer {
             try { worker.join(left); } catch (InterruptedException e) { interrupted=true; }
         }
         if (interrupted) Thread.currentThread().interrupt();
+        try { fs.endSession(); }
+        catch (IOException e) { recordWarning(currentPath,"Could not release transfer session cleanly: "+e); }
+        // A disconnect before END_DATA still preserves complete received staging files.
+        for (VerificationCoordinator.File file:verificationFiles) if (!file.summarized) {
+            file.summarized=true; summary.unverifiedFiles++;
+        }
         summary.cancelled=cancelled.get();
         long elapsed=Math.max(0,System.currentTimeMillis()-started);
         for (TransferConnection connection:connections) {
@@ -143,7 +171,9 @@ public final class ReliableTransfer {
         }
         collectWarnings(currentPath);
         notifySafely(() -> callback.onSummary(summary));
-        if (summary.isSuccessful()) notifySafely(() -> callback.onComplete(upload,summary.transferredBytes,elapsed));
+        if (summary.verificationStopped && protocolFinished && !summary.cancelled)
+            notifySafely(() -> callback.onVerificationStopped(upload,summary.transferredBytes,elapsed));
+        else if (summary.isSuccessful()) notifySafely(() -> callback.onComplete(upload,summary.transferredBytes,elapsed));
         else notifySafely(() -> callback.onIncomplete());
     }
 
@@ -154,6 +184,7 @@ public final class ReliableTransfer {
         try {
             proposed.write(control);
             options=TransferOptions.read(control);
+            summary.verificationEnabled=options.verifySha256;
             control.writeUTF(destinationRoot.path);
             SourceWalker walker=new SourceWalker(selected,sourceRoot);
             List<Entry> scanned=null;
@@ -194,6 +225,8 @@ public final class ReliableTransfer {
             }
             control.writeInt(END);
             if (!control.readBoolean()) throw new IOException("Remote transfer did not finish");
+            if (options.verifySha256) verify(true);
+            protocolFinished=true;
             return true;
         } catch (IOException | RuntimeException e) {
             if (!cancelled.get()) failed(currentPath.isEmpty()?"Transfer":currentPath,shortMessage(e.toString()));
@@ -210,7 +243,7 @@ public final class ReliableTransfer {
         try {
             before=fs.stat(path);
             if (before.isDirectory()) throw new IOException("Source changed into a directory");
-            if (options.verifySha256 || options.resume || options.incremental) {
+            if (options.incremental) {
                 phase("hashing-source");
                 hash=TransferHashes.hash(fs,path,before.getSize());
             }
@@ -218,7 +251,7 @@ public final class ReliableTransfer {
             control.writeInt(SOURCE_ERROR); control.writeUTF(path); control.writeUTF(shortMessage(e.toString()));
             failed(path,e.toString()); return;
         }
-        String identity=TransferHashes.text(path+"\n"+before.getSize()+"\n"+before.lastModified()+"\n"+hash);
+        String identity=TransferHashes.text("HFX401\n"+path+"\n"+before.getSize()+"\n"+before.lastModified());
         currentPath=entry.relative; currentSize=before.getSize(); currentPrefix=0;
         control.writeInt(FILE); control.writeInt(id); control.writeUTF(entry.relative);
         control.writeUTF(identity); control.writeLong(currentSize); control.writeLong(before.lastModified()); control.writeUTF(hash);
@@ -261,8 +294,6 @@ public final class ReliableTransfer {
                 RemoteFile after=fs.stat(path);
                 if (after.getSize()!=before.getSize() || after.lastModified()!=before.lastModified())
                     throw new IOException("Source changed during transfer");
-                if (!hash.isEmpty() && !hash.equals(TransferHashes.hash(fs,path,before.getSize())))
-                    throw new IOException("Source content changed during transfer");
             } catch (IOException e) { outcome=2; sourceFailure=e.toString(); }
         }
         control.writeInt(outcome);
@@ -271,8 +302,15 @@ public final class ReliableTransfer {
         message=control.readUTF();
         readWarnings(entry.relative);
         if (success) {
-            summary.completedFiles++;
-            result(entry.relative,options.verifySha256?"verified":"completed",message);
+            if (options.verifySha256) {
+                if (verificationFiles.size()>=1000000) throw new IOException("Verification selection exceeds one million files");
+                verificationFiles.add(new VerificationCoordinator.File(id,entry.relative,path,"","",
+                        before.getSize(),before.lastModified()));
+                result(entry.relative,"received",message);
+            } else {
+                summary.completedFiles++;
+                result(entry.relative,"completed",message);
+            }
         } else failed(entry.relative,message);
         progress(currentPrefix);
     }
@@ -283,6 +321,9 @@ public final class ReliableTransfer {
         try {
             TransferOptions proposed=TransferOptions.read(control);
             options=explicit?configured.copy():proposed;
+            // Integrity may be requested by either endpoint; destination conflict policy stays local.
+            options.verifySha256=proposed.verifySha256 || (explicit && configured.verifySha256);
+            summary.verificationEnabled=options.verifySha256;
             options.write(control);
             String root=control.readUTF();
             totalBytes=control.readLong(); totalFiles=control.readLong();
@@ -291,7 +332,12 @@ public final class ReliableTransfer {
             while (true) {
                 checkCancelled();
                 int command=control.readInt();
-                if (command==END) { control.writeBoolean(true); return true; }
+                if (command==END) {
+                    control.writeBoolean(true);
+                    if (options.verifySha256) verify(false);
+                    protocolFinished=true;
+                    return true;
+                }
                 if (command==SOURCE_ERROR) { failed(control.readUTF(),control.readUTF()); continue; }
                 if (command==DIRECTORY) {
                     String relative=control.readUTF(); long modified=control.readLong();
@@ -355,24 +401,149 @@ public final class ReliableTransfer {
             if (failure==null) {
                 try {
                     checkCancelled();
-                    phase(options.verifySha256?"verifying":"committing");
+                    phase(options.verifySha256?"received":"committing");
                     checkCancelled();
-                    fs.commit(token,options.verifySha256); committed=true;
+                    if (options.verifySha256) {
+                        if (verificationFiles.size()>=1000000) throw new IOException("Verification selection exceeds one million files");
+                        fs.seal(token);
+                        verificationFiles.add(new VerificationCoordinator.File(id,relative,"",token,prepared.target,size,modified));
+                    } else fs.commit(token,false);
+                    committed=true;
                 }
                 catch (IOException e) { failure=e.toString(); }
             }
             if (outcome==2) { fs.abandon(token,false); token=""; }
             List<String> warnings=collectWarnings(relative);
             control.writeBoolean(failure==null);
-            String completedMessage="File committed: "+prepared.target;
+            String completedMessage=(options.verifySha256?"File received, awaiting SHA-256: ":"File committed: ")+prepared.target;
             control.writeUTF(failure==null?shortMessage(completedMessage):shortMessage(failure));
             control.writeInt(warnings.size());
             for (String warning:warnings) control.writeUTF(warning);
-            if (failure==null) { summary.completedFiles++; result(relative,options.verifySha256?"verified":"completed",completedMessage); }
+            if (failure==null) {
+                if (!options.verifySha256) summary.completedFiles++;
+                result(relative,options.verifySha256?"received":"completed",completedMessage);
+            }
             else failed(relative,failure);
             progress(state.prefix);
         } finally {
             if (!committed && !token.isEmpty()) fs.abandon(token,options.resume);
+        }
+    }
+
+    private void verify(boolean sending) throws IOException {
+        verificationStarted=true;
+        VerificationCoordinator coordinator=new VerificationCoordinator(fs,control,verificationFiles,summary,
+                new VerificationCoordinator.Host() {
+                    @Override public void checkCancelled() throws IOException { ReliableTransfer.this.checkCancelled(); }
+                    @Override public boolean stopping() { return verificationStopping(); }
+                    @Override public void stop() { verificationStop.set(true); }
+                    @Override public void progress(VerificationProgress p) {
+                        notifySafely(() -> callback.onVerificationProgress(p));
+                    }
+                    @Override public void result(String path,String status,String message) { ReliableTransfer.this.result(path,status,message); }
+                    @Override public List<String> collectWarnings(String path) { return ReliableTransfer.this.collectWarnings(path); }
+                    @Override public void warning(String path,String message) { recordWarning(path,message); }
+                    @Override public void retry(VerificationCoordinator.File file,boolean upload) throws IOException {
+                        if (upload) retrySend(file); else retryReceive(file);
+                    }
+                });
+        if (sending) coordinator.send(); else coordinator.receive();
+    }
+
+    private void retrySend(VerificationCoordinator.File file) throws IOException {
+        control.writeInt(file.id);
+        int ready=verificationStopping()?VERIFY_STOPPED:STORED;
+        String message="";
+        if (ready==STORED) {
+            try { unchangedSource(file); }
+            catch (IOException e) { ready=STORE_FAILED; message=shortMessage(e.toString()); }
+        }
+        control.writeInt(ready); control.writeUTF(message);
+        int accepted=control.readInt(); message=control.readUTF();
+        if (accepted==VERIFY_STOPPED) { verificationStop.set(true); return; }
+        if (accepted==STORE_FAILED) { file.state=VerificationCoordinator.FAILED; file.message=message; return; }
+        if (accepted!=STORED || ready!=STORED) throw new IOException("Invalid repair-file response");
+        currentPath=file.path; currentSize=file.size; currentPrefix=0;
+        boolean transferred=false,workersStarted=false;
+        String sourceFailure="";
+        try (TransferFileAccess.Handle input=fs.openRead(file.source)) {
+            workersStarted=true;
+            transferred=sendBlocks(file.id,input.channel,0,file.size);
+        } catch (IOException e) {
+            sourceFailure=shortMessage(e.toString());
+            if (!workersStarted) endDataFile(file.id);
+        }
+        int outcome=verificationStopping()?3:transferred?1:0;
+        if (outcome==1) {
+            try { unchangedSource(file); }
+            catch (IOException e) { outcome=2; sourceFailure=shortMessage(e.toString()); }
+        }
+        control.writeInt(outcome); control.writeUTF(sourceFailure);
+        int state=control.readInt(); message=control.readUTF(); readWarnings(file.path);
+        if (state!=VerificationCoordinator.PENDING && state!=VerificationCoordinator.MISMATCH
+                && state!=VerificationCoordinator.FAILED) throw new IOException("Invalid repaired-file state");
+        if (state==VerificationCoordinator.MISMATCH) verificationStop.set(true);
+        file.state=state; file.message=message;
+        progress(currentPrefix);
+    }
+
+    private void retryReceive(VerificationCoordinator.File file) throws IOException {
+        if (control.readInt()!=file.id) throw new IOException("Wrong repair-file ID");
+        int requested=control.readInt();
+        String sourceMessage=control.readUTF();
+        if (requested==VERIFY_STOPPED) verificationStop.set(true);
+        if (verificationStopping()) {
+            control.writeInt(VERIFY_STOPPED); control.writeUTF("Verification stopped"); return;
+        }
+        if (requested==STORE_FAILED) {
+            file.state=VerificationCoordinator.FAILED; file.message=sourceMessage;
+            control.writeInt(STORE_FAILED); control.writeUTF(shortMessage(sourceMessage)); return;
+        }
+        if (requested!=STORED) throw new IOException("Invalid repair-file request");
+        TransferFileAccess.Handle output;
+        try { fs.resetForRetry(file.token); output=fs.openStage(file.token); }
+        catch (IOException e) {
+            file.state=VerificationCoordinator.FAILED; file.message=shortMessage(e.toString());
+            control.writeInt(STORE_FAILED); control.writeUTF(file.message); return;
+        }
+        control.writeInt(STORED); control.writeUTF("");
+        currentPath=file.path; currentSize=file.size; currentPrefix=0;
+        ReceiveState received=new ReceiveState(file.token,output.channel,0,file.size);
+        try (TransferFileAccess.Handle ignored=output) { receiveBlocks(file.id,received); }
+        int outcome=control.readInt(); sourceMessage=control.readUTF();
+        if (outcome==3) verificationStop.set(true);
+        if (verificationStopping()) {
+            // resetForRetry retains the previous complete mismatch. Never publish this partial attempt.
+            file.state=VerificationCoordinator.MISMATCH;
+            file.message="SHA-256 mismatch retained; verification and repair were stopped";
+            fs.retainUnverified(file.token);
+            file.retained=true;
+        } else if (outcome==1 && received.failure==null && received.prefix==file.size) {
+            try { fs.seal(file.token); file.state=VerificationCoordinator.PENDING; file.message="Repair data received"; }
+            catch (IOException e) { file.state=VerificationCoordinator.FAILED; file.message=shortMessage(e.toString()); }
+        } else {
+            file.state=VerificationCoordinator.FAILED;
+            file.message=received.failure!=null?received.failure:!sourceMessage.isEmpty()?sourceMessage:"Repair data was incomplete";
+            fs.retainUnverified(file.token);
+            file.retained=true;
+        }
+        List<String> warnings=collectWarnings(file.path);
+        control.writeInt(file.state); control.writeUTF(shortMessage(file.message));
+        control.writeInt(warnings.size()); for (String warning:warnings) control.writeUTF(warning);
+        progress(received.prefix);
+    }
+    private void unchangedSource(VerificationCoordinator.File file) throws IOException {
+        RemoteFile now=fs.stat(file.source);
+        if (now.isDirectory() || now.getSize()!=file.size || now.lastModified()!=file.modified)
+            throw new IOException("Source changed; a new transfer is required: "+file.path);
+    }
+    private void endDataFile(int id) {
+        for (TransferConnection connection:active()) {
+            try (AutoCloseable ignored=deadline(connection.channel)) {
+                connection.channel.writeInt(FILE_END); connection.channel.writeInt(id);
+                if (connection.channel.readInt()!=FILE_END || connection.channel.readInt()!=id)
+                    throw new IOException("Invalid file boundary");
+            } catch (Exception failure) { channelFailure(connection,failure); }
         }
     }
 
@@ -431,29 +602,42 @@ public final class ReliableTransfer {
         for (TransferConnection c:active) {
             Thread thread=new Thread(() -> {
                 ByteBuffer buffer=takeBuffer();
+                ByteBuffer header=ByteBuffer.allocate(24);
                 Chunk chunk=null;
+                int crcFailures=0;
                 try {
                     while ((chunk=scheduler.take())!=null) {
                         checkCancelled();
+                        if (verificationStopping()) { scheduler.abort("Verification stopped"); chunk=null; break; }
                         channelTask(c,taskPath,true,chunk.offset,chunk.length,size);
                         buffer.clear(); buffer.limit(chunk.length);
                         try { readFully(input,buffer,chunk.offset); }
                         catch (IOException e) { scheduler.abort(e.toString()); chunk=null; break; }
                         buffer.flip();
-                        java.security.MessageDigest digest=TransferHashes.digest();
-                        digest.update(buffer.duplicate());
-                        byte[] hash=digest.digest();
+                        int checksum=crc32(buffer);
                         try (AutoCloseable ignored=deadline(c.channel)) {
-                            c.channel.writeInt(BLOCK); c.channel.writeInt(id);
-                            c.channel.writeLong(chunk.offset); c.channel.writeInt(chunk.length); c.channel.write(hash);
+                            header.clear();
+                            header.putInt(BLOCK).putInt(id).putLong(chunk.offset).putInt(chunk.length).putInt(checksum);
+                            header.flip();
+                            writeFully(c.channel,header);
                             writeFully(c.channel,buffer);
                             if (c.channel.readInt()!=ACK || c.channel.readInt()!=id || c.channel.readLong()!=chunk.offset)
                                 throw new IOException("Invalid block acknowledgement");
-                            boolean stored=c.channel.readBoolean();
+                            int status=c.channel.readInt();
                             long prefix=c.channel.readLong();
                             String error=c.channel.readUTF();
-                            if (!stored) { scheduler.abort(error); chunk=null; break; }
                             if (prefix<start || prefix>size) throw new IOException("Invalid durable prefix");
+                            if (status==BAD_CRC) {
+                                if (++crcFailures>=8) throw new IOException("Repeated block CRC32 failures on this channel");
+                                scheduler.retry(chunk); chunk=null; continue;
+                            }
+                            if (status==VERIFY_STOPPED && verificationStarted) {
+                                verificationStop.set(true);
+                                scheduler.abort("Verification stopped"); chunk=null; break;
+                            }
+                            if (status==STORE_FAILED) { scheduler.abort(error); chunk=null; break; }
+                            if (status!=STORED) throw new IOException("Invalid block acknowledgement status");
+                            crcFailures=0;
                             c.addUploadedBytes(chunk.length);
                             synchronized(summary) { summary.transferredBytes+=chunk.length; }
                             scheduler.done(chunk,prefix);
@@ -481,6 +665,7 @@ public final class ReliableTransfer {
         for (TransferConnection c:active()) {
             Thread thread=new Thread(() -> {
                 ByteBuffer buffer=takeBuffer();
+                ByteBuffer acknowledgement=ByteBuffer.allocate(30);
                 try {
                     while (true) {
                         checkCancelled();
@@ -497,17 +682,23 @@ public final class ReliableTransfer {
                             long offset=c.channel.readLong(); int length=c.channel.readInt();
                             state.validate(offset,length);
                             channelTask(c,taskPath,false,offset,length,state.size);
-                            byte[] expected=new byte[32]; c.channel.readFully(expected);
+                            int expected=c.channel.readInt();
                             buffer.clear(); buffer.limit(length); c.channel.readFully(buffer); buffer.flip();
-                            java.security.MessageDigest digest=TransferHashes.digest();
-                            digest.update(buffer.duplicate());
-                            if (!java.security.MessageDigest.isEqual(expected,digest.digest()))
-                                throw new IOException("Block SHA-256 mismatch");
-                            state.store(offset,buffer);
-                            c.addDownloadedBytes(length);
-                            c.channel.writeInt(ACK); c.channel.writeInt(id); c.channel.writeLong(offset);
-                            c.channel.writeBoolean(state.failure==null); c.channel.writeLong(state.prefix);
-                            c.channel.writeUTF(state.failure==null?"":shortMessage(state.failure));
+                            int status;
+                            if (verificationStopping()) status=VERIFY_STOPPED;
+                            else if (expected!=crc32(buffer)) status=BAD_CRC;
+                            else {
+                                state.store(offset,buffer);
+                                c.addDownloadedBytes(length);
+                                status=state.failure==null?STORED:STORE_FAILED;
+                            }
+                            byte[] error=state.failure==null?null:shortMessage(state.failure).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                            acknowledgement.clear();
+                            acknowledgement.putInt(ACK).putInt(id).putLong(offset).putInt(status)
+                                    .putLong(state.prefix).putShort((short)(error==null?0:error.length));
+                            acknowledgement.flip();
+                            writeFully(c.channel,acknowledgement);
+                            if (error!=null) writeFully(c.channel,ByteBuffer.wrap(error));
                         }
                     }
                 } catch (Exception e) { channelFailure(c,e); }
@@ -587,6 +778,7 @@ public final class ReliableTransfer {
             if (chunk!=null) retries.addFirst(chunk);
             alive--; notifyAll();
         }
+        synchronized void retry(Chunk chunk) { retries.addFirst(chunk); notifyAll(); }
         synchronized void abort(String reason) { failure=reason; notifyAll(); }
         synchronized boolean success() { return failure==null && remaining==0; }
     }

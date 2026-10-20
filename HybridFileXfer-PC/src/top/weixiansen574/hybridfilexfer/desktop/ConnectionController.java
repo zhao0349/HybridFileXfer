@@ -3,6 +3,7 @@ package top.weixiansen574.hybridfilexfer.desktop;
 import top.weixiansen574.hybridfilexfer.core.TransferOptions;
 import top.weixiansen574.hybridfilexfer.core.TransferProgress;
 import top.weixiansen574.hybridfilexfer.core.TransferSummary;
+import top.weixiansen574.hybridfilexfer.core.VerificationProgress;
 import top.weixiansen574.hybridfilexfer.core.bean.TrafficInfo;
 import top.weixiansen574.hybridfilexfer.core.callback.ClientCallBack;
 import top.weixiansen574.hybridfilexfer.core.callback.ConnectServerCallback;
@@ -26,7 +27,7 @@ import static top.weixiansen574.hybridfilexfer.desktop.DesktopText.text;
 
 /** A fresh client for every attempt; stopping never blocks the GUI event thread. */
 public final class ConnectionController implements AutoCloseable {
-    public enum State { IDLE, WAITING, CONNECTING, CONNECTED, TRANSFERRING, STOPPING, ERROR }
+    public enum State { IDLE, WAITING, CONNECTING, CONNECTED, TRANSFERRING, VERIFYING, STOPPING, ERROR }
     public interface Listener {
         default void onState(State state, String message) { }
         default void onLog(String message) { }
@@ -35,6 +36,8 @@ public final class ConnectionController implements AutoCloseable {
         default void onSpeed(List<TrafficInfo> traffic) { }
         default void onTransferStarted(boolean upload) { }
         default void onProgress(TransferProgress progress) { }
+        default void onVerificationProgress(VerificationProgress progress) { }
+        default void onVerificationStopped(boolean upload, long bytes, long millis) { }
         default void onSummary(TransferSummary summary) { }
         default void onComplete(boolean upload, long bytes, long millis) { }
         default void onTransferFailed(String message) { }
@@ -250,6 +253,11 @@ public final class ConnectionController implements AutoCloseable {
             @Override public void onFileDownloading(String name, String path, long position, long size) { }
             @Override public void onSpeedInfo(List<TrafficInfo> traffic) { if (!a.stopped) listener.onSpeed(traffic); }
             @Override public void onProgress(TransferProgress progress) { if (!a.stopped) listener.onProgress(progress); }
+            @Override public void onVerificationProgress(VerificationProgress progress) {
+                if (a.stopped || !a.transferActive) return;
+                listener.onVerificationProgress(progress);
+                state(a, State.VERIFYING, text("正在校验文件，可随时停止校验与重试。", "Verifying files. You can stop verification and retries at any time."));
+            }
             @Override public void onSummary(TransferSummary summary) { listener.onSummary(summary); }
             @Override public void onPhase(String phase) { log(s, phase); }
             @Override public void onFileResult(String path, String status, String message) {
@@ -270,6 +278,12 @@ public final class ConnectionController implements AutoCloseable {
                 listener.onComplete(upload, bytes, time);
                 state(a, State.CONNECTED, a.failed ? text("本次传输有失败文件，请查看任务摘要。", "Some files failed. Review the transfer summary.")
                         : text("传输完成，可继续在手机选择文件。", "Transfer finished. You can select more files on the phone."));
+            }
+            @Override public void onVerificationStopped(boolean upload, long bytes, long time) {
+                a.transferActive = false;
+                listener.onVerificationStopped(upload, bytes, time);
+                state(a, State.CONNECTED, text("校验与重试已停止，请查看摘要；连接保持可用。",
+                        "Verification and retries stopped. Review the summary; the connection remains available."));
             }
             @Override public void onIncomplete() {
                 a.transferActive = false;
@@ -293,6 +307,10 @@ public final class ConnectionController implements AutoCloseable {
     public void cancelTransfer() {
         Attempt a = current;
         if (a != null && a.client != null) a.client.cancelTransfer();
+    }
+    public void stopVerification() {
+        Attempt a = current;
+        if (a != null && a.client != null) a.client.stopVerification();
     }
     @Override public void close() {
         Attempt a = current;

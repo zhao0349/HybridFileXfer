@@ -11,7 +11,7 @@ import top.weixiansen574.nio.DataByteChannel;
 
 public abstract class HFXService {
     public static final String CLIENT_HEADER = "HFXC";
-    public static final int VERSION_CODE = 400;
+    public static final int VERSION_CODE = 401;
     protected final LinkedBlockingDeque<ByteBuffer> buffers = new LinkedBlockingDeque<>();
     protected DataByteChannel ctChannel;
     protected List<TransferConnection> connections;
@@ -30,8 +30,12 @@ public abstract class HFXService {
         ReliableTransfer transfer = activeTransfer;
         if (transfer != null) transfer.cancel();
     }
+    public void stopVerification() {
+        ReliableTransfer transfer = activeTransfer;
+        if (transfer != null) transfer.stopVerification();
+    }
     protected TransferFileAccess createFileAccess() throws IOException {
-        throw new IOException("This endpoint has no filesystem adapter for protocol 400");
+        throw new IOException("This endpoint has no filesystem adapter for protocol 401");
     }
     private synchronized ReliableTransfer begin(TransferFileCallback callback) throws IOException {
         if (activeTransfer != null) throw new IOException("A transfer is already running");
@@ -62,7 +66,7 @@ public abstract class HFXService {
         lastTransferSummary = transfer.getSummary();
         activeTransfer = null;
     }
-    // Kept for source compatibility with platform subclasses; protocol 400 uses FileAccess.
+    // Kept for source compatibility with platform subclasses; protocol 401 uses FileAccess.
     protected abstract WriteFileCall createWriteFileCall(LinkedBlockingDeque<ByteBuffer> buffers, int count);
     protected abstract ReadFileCall createReadFileCall(LinkedBlockingDeque<ByteBuffer> buffers,
             List<RemoteFile> files, Directory localDir, Directory remoteDir, int count);

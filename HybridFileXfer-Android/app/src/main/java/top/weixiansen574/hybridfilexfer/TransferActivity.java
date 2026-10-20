@@ -148,7 +148,10 @@ public class TransferActivity extends AppCompatActivity implements TransferSessi
                 getResources().getStringArray(R.array.conflict_policies)));
         form.addView(policy);
         android.widget.CheckBox verify = new android.widget.CheckBox(this);
-        verify.setText(R.string.verify_sha256); verify.setChecked(true); form.addView(verify);
+        verify.setText(R.string.verify_sha256); verify.setChecked(false); form.addView(verify);
+        android.widget.TextView verificationHint = new android.widget.TextView(this);
+        verificationHint.setText(R.string.verify_sha256_description);
+        form.addView(verificationHint);
         android.widget.CheckBox resume = new android.widget.CheckBox(this);
         resume.setText(R.string.resume_verified); resume.setChecked(true); form.addView(resume);
         android.widget.CheckBox incremental = new android.widget.CheckBox(this);
@@ -196,7 +199,13 @@ public class TransferActivity extends AppCompatActivity implements TransferSessi
         }
         if (transferSession.running) {
             transferDialog.showSpeeds(transferSession.speeds);
-            transferDialog.showProgress(transferSession.progress, transferSession.status);
+            if (transferSession.verification.active()) {
+                transferDialog.setOnCancel(transferSession::stopVerification);
+                transferDialog.showVerification(transferSession.verification.progress(),
+                        transferSession.verification.stopping());
+            } else {
+                transferDialog.showProgress(transferSession.progress, transferSession.status);
+            }
         } else {
             transferDialog.complete(transferSession.upload, transferSession.traffic, transferSession.elapsed);
             transferDialog.showResult(transferSession.resultText());

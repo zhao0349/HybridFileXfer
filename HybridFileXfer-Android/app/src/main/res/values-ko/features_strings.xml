@@ -21,8 +21,9 @@
     <string name="send_to_local">휴대폰 ← 상대 기기</string>
     <string name="conflict_keep_both">같은 이름이 있으면: 둘 다 유지</string>
     <string name="conflict_skip">같은 이름이 있으면: 기존 파일 유지 (건너뛰기)</string>
-    <string name="conflict_overwrite">같은 이름이 있으면: 검증 후 교체</string>
-    <string name="verify_sha256">SHA-256으로 전송 내용 검증</string>
+    <string name="conflict_overwrite">같은 이름이 있으면: 덮어쓰기</string>
+    <string name="verify_sha256">전송 후 전체 SHA-256 검증 (선택 사항)</string>
+    <string name="verify_sha256_description">어느 한 기기에서 켜면 됩니다. 시간이 더 걸리며 검증과 재시도는 언제든지 중지할 수 있습니다. 블록별 CRC32 검사는 항상 활성화됩니다.</string>
     <string name="resume_verified">기존 앞부분을 검증한 후 중단된 파일 이어받기</string>
     <string name="incremental_transfer">내용이 같은 파일 건너뛰기</string>
     <string name="prescan_transfer">먼저 전체 크기 스캔 (큰 폴더는 시간이 걸릴 수 있음)</string>
@@ -44,4 +45,17 @@
     <string name="transfer_cleanup_warnings">정리 경고: %1$d (완료된 파일은 성공으로 유지됩니다)</string>
     <string name="channel_task_upload">업로드 중: %1$s\n블록 %2$d / %3$d</string>
     <string name="channel_task_download">다운로드 중: %1$s\n블록 %2$d / %3$d</string>
+    <string name="stop_verification">검증 및 재시도 중지</string>
+    <string name="verification_running">양쪽 파일을 병렬 검증 중</string>
+    <string name="verification_waiting_peer">상대 기기의 검증을 기다리는 중</string>
+    <string name="verification_retrying">일치하지 않는 파일을 다시 전송 중</string>
+    <string name="verification_stopping">검증 및 재시도 중지 중…</string>
+    <string name="verification_round_status">%1$d차 · %2$s</string>
+    <string name="verification_live_counts">통과: %1$d · 실패: %2$d · 미검증: %3$d</string>
+    <string name="verification_result_counts">검증 통과: %1$d · 실패: %2$d · 미검증: %3$d</string>
+    <string name="verification_retry_counts">검증 횟수: %1$d · 재전송 파일: %2$d</string>
+    <string name="verification_stopped">검증과 재시도가 중지되었습니다.</string>
+    <string name="verification_stopped_with_failures">검증과 재시도가 중지되었습니다. 실패한 파일이 남아 있습니다.</string>
+    <string name="verification_unchecked_note">미검증 파일은 검증 통과로 집계하지 않습니다.</string>
+    <string name="verification_disabled">전체 SHA-256 검증은 사용하지 않았습니다. 블록별 CRC32 검사는 활성화되어 있습니다.</string>
 </resources>

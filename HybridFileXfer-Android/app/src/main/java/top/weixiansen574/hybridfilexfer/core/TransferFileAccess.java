@@ -9,6 +9,12 @@ import top.weixiansen574.hybridfilexfer.core.bean.RemoteFile;
 /** Filesystem operations are performed by the privileged IO process on Android. */
 public interface TransferFileAccess {
     default void beginSession() throws IOException {}
+    /**
+     * Closes client descriptors and retains complete unpublished files. A privileged
+     * service keeps a reservation for an in-flight Binder open until its late close
+     * acknowledgment arrives, preventing that descriptor from outliving its lock.
+     */
+    default void endSession() throws IOException {}
     default void cancelPendingOperations() {}
     /** Drains nonfatal filesystem warnings; implementations must bound both count and message size. */
     default List<String> takeWarnings() { return java.util.Collections.emptyList(); }
@@ -42,6 +48,23 @@ public interface TransferFileAccess {
                      String hash, TransferOptions options) throws IOException;
     Handle openStage(String token) throws IOException;
     void checkpoint(String token, long offset) throws IOException;
+    /** Durably seals a complete stage and releases its per-file descriptors. */
+    void seal(String token) throws IOException;
+    /**
+     * Opens a sealed file read-only and reserves its generation for verification.
+     * Closing the handle closes only the reader. The caller must subsequently call
+     * completeVerification or releaseVerification, including on hash failure.
+     */
+    Handle openSealedRead(String token) throws IOException;
+    /** Publishes a reserved generation after trusted local and peer hashes agree. */
+    void completeVerification(String token, String expectedSha256, String actualSha256) throws IOException;
+    void releaseVerification(String token) throws IOException;
+    /** Starts another generation for the same target, preserving the previous complete copy. */
+    void resetForRetry(String token) throws IOException;
+    /** Publishes complete unchecked data without overwriting an existing destination. */
+    String publishUnverified(String token) throws IOException;
+    /** Retains complete diagnostic data, closes reservations, and invalidates the token. */
+    void retainUnverified(String token) throws IOException;
     void commit(String token, boolean verifySha256) throws IOException;
     void abandon(String token, boolean keep) throws IOException;
 }

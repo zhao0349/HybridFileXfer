@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--small-kib", type=int, default=16)
     parser.add_argument("--channels", default="1,2,4")
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--sha256", action="store_true", help="Enable optional post-transfer SHA-256")
     parser.add_argument("--classes", type=Path, default=ROOT / ".build/classes")
     parser.add_argument("--output", type=Path, default=ROOT / ".build/benchmarks/transfer.csv")
     args = parser.parse_args()
@@ -41,7 +42,7 @@ def main():
     classpath = os.pathsep.join([str(args.classes), str(classes)])
     subprocess.run([tool("java"), "-cp", classpath, "TransferBenchmark", str(args.size_mib),
                     str(args.small_files), str(args.small_kib), args.channels,
-                    str(args.repetitions), str(args.output)], cwd=ROOT, check=True)
+                    str(args.repetitions), str(args.output), str(args.sha256).lower()], cwd=ROOT, check=True)
 
 
 if __name__ == "__main__":

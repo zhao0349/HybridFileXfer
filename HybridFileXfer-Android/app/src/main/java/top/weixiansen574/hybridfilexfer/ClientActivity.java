@@ -9,6 +9,8 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Button;
+import android.widget.ProgressBar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import java.util.LinkedHashMap;
@@ -20,6 +22,8 @@ public class ClientActivity extends AppCompatActivity implements ClientSession.L
     private ClientSession session;
     private TextView state, upload, download;
     private LinearLayout connections;
+    private Button stopVerification;
+    private ProgressBar verificationProgress;
     private final Map<String, View> channelViews = new LinkedHashMap<>();
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -29,7 +33,10 @@ public class ClientActivity extends AppCompatActivity implements ClientSession.L
         upload = findViewById(R.id.upload_speed);
         download = findViewById(R.id.download_speed);
         connections = findViewById(R.id.connections);
+        stopVerification = findViewById(R.id.stop_verification);
+        verificationProgress = findViewById(R.id.verification_progress);
         session = ClientSession.get(this);
+        stopVerification.setOnClickListener(v -> session.stopVerification());
         session.attach(this);
         if (!session.active) {
             Bundle extras = getIntent().getExtras();
@@ -46,6 +53,20 @@ public class ClientActivity extends AppCompatActivity implements ClientSession.L
 
     @Override public void onSessionChanged() {
         state.setText(session.state);
+        boolean verifying = session.verification.active();
+        stopVerification.setVisibility(verifying ? View.VISIBLE : View.GONE);
+        verificationProgress.setVisibility(verifying ? View.VISIBLE : View.GONE);
+        stopVerification.setEnabled(session.verification.canStop());
+        if (verifying) {
+            top.weixiansen574.hybridfilexfer.core.VerificationProgress progress = session.verification.progress();
+            verificationProgress.setIndeterminate(progress.totalFiles == 0
+                    || "retrying".equals(progress.phase) || session.verification.stopping());
+            if (!verificationProgress.isIndeterminate()) {
+                verificationProgress.setMax(1000);
+                verificationProgress.setProgress((int) Math.min(1000,
+                        progress.checkedFiles * 1000.0 / progress.totalFiles));
+            }
+        }
         java.util.Iterator<Map.Entry<String, View>> stale = channelViews.entrySet().iterator();
         while (stale.hasNext()) {
             Map.Entry<String, View> entry = stale.next();

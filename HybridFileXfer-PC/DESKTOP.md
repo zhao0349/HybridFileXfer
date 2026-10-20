@@ -20,8 +20,8 @@ first; a retry refreshes both after a phone-side restart. Explicitly entered
 codes are retained. The read-only phone endpoint permits only authorized ADB
 shell/root UIDs, exposes no code for stopped or connected sessions, and never
 starts a service itself. For network mode, enter the pairing code displayed on
-the phone. Use matching desktop and Android builds; older phone builds require
-a manually entered code.
+the phone. Use matching desktop and Android builds; a manual pairing code cannot
+bypass the protocol version check.
 
 File selection remains in the phone's two-pane browser. The desktop displays
 confirmed progress, per-channel speed, cancellation, the final summary, and
@@ -35,6 +35,21 @@ ADB's atomic automatic allocation; this avoids Windows reserved-port conflicts.
 Only the forwarding rule created by this app is removed. Experimental
 `ADB_BURST_MODE` affects this app's subprocesses and does not kill or restart the
 shared ADB server.
+
+CRC32 block checks are always enabled and reuse the existing buffers and
+acknowledgments. Optional full-file SHA-256 verification is off by default.
+Enabling it on either device is sufficient. Both devices hash several files concurrently after all data has
+arrived, wait for each other's results, then resend all digest mismatches from
+that round and verify again. Read, permission and disk errors are reported
+instead of causing endless retries.
+
+**Stop verification & retries** preserves received files and keeps the connection
+available. The summary separates verified, failed and unchecked files. An
+unchecked file never overwrites an existing destination; known mismatches remain
+staged for diagnosis. A partial retry is never published as a complete file.
+The earlier **Cancel transfer** action still ends the connection to stop blocked
+data I/O. Incremental skipping and resume checks still read the necessary existing
+content even when full-file verification is disabled.
 
 Pairing secrets are not stored in preferences or history. Optional local history
 contains up to 100 task summaries in `~/.hybridfilexfer/history.tsv`, without

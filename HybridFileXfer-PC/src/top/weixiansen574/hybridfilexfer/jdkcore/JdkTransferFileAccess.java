@@ -7,6 +7,21 @@ import java.nio.file.StandardCopyOption;
 import top.weixiansen574.hybridfilexfer.core.LocalTransferFileAccess;
 
 public class JdkTransferFileAccess extends LocalTransferFileAccess {
+    @Override protected String reservationKey(File file) throws IOException {
+        String path=super.reservationKey(file);
+        // A missing Windows destination still has case-insensitive identity.
+        return File.separatorChar=='\\'?path.toLowerCase(java.util.Locale.ROOT):path;
+    }
+    @Override protected String fileIdentity(File file) throws IOException {
+        java.nio.file.attribute.BasicFileAttributes attributes=Files.readAttributes(file.toPath(),
+                java.nio.file.attribute.BasicFileAttributes.class,java.nio.file.LinkOption.NOFOLLOW_LINKS);
+        Object key=attributes.fileKey();
+        // The Windows JDK provider returns null for fileKey. Its high-resolution
+        // creation/change stamps detect ordinary replacement while our target
+        // reservation excludes other cooperating transfer sessions. They are not
+        // a security boundary against an external writer forging timestamps.
+        return key!=null?key.toString():"timestamps:"+attributes.creationTime()+":"+attributes.lastModifiedTime();
+    }
     @Override protected boolean sameFile(File first,File second) throws IOException {
         return Files.isSameFile(first.toPath(),second.toPath());
     }

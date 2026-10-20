@@ -154,6 +154,7 @@ public final class TransferReliabilityTest {
     }
     private static TransferOptions options() {
         TransferOptions o=new TransferOptions(); o.conflictPolicy=TransferOptions.ConflictPolicy.OVERWRITE;
+        o.verifySha256=true;
         o.timeoutSeconds=5; return o;
     }
     private static Path temp(String name) throws IOException { return Files.createTempDirectory("hfx-"+name+"-"); }

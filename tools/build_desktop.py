@@ -157,7 +157,7 @@ def main():
     manifest.write_text("Manifest-Version: 1.0\n"
                         "Main-Class: top.weixiansen574.hybridfilexfer.Main\n"
                         "Multi-Release: true\n"
-                        "Implementation-Version: 4.0.0-preview+" + revision + ("-dirty" if dirty else "") + "\n\n",
+                        "Implementation-Version: 4.0.1-preview+" + revision + ("-dirty" if dirty else "") + "\n\n",
                         encoding="utf-8")
     run([java_tool("jar"), "cfm", jar_path, manifest, "-C", classes, "."])
     run([java_tool("java"), "-jar", jar_path, "--version"], timeout=20)
@@ -208,7 +208,7 @@ def main():
         icon = package_icon(classes)
         run([java_tool("jpackage"), "--type", "app-image", "--name", "HybridFileXfer",
              "--input", jar_dir, "--main-jar", jar_path.name, "--dest", image_dir,
-             "--app-version", "4.0.0", "--vendor", "HybridFileXfer contributors",
+             "--app-version", "4.0.1", "--vendor", "HybridFileXfer contributors",
              "--icon", icon,
              "--java-options", "-Dfile.encoding=UTF-8"])
         executable = image_dir / "HybridFileXfer"
@@ -242,7 +242,7 @@ def main():
         shutil.copytree(ROOT / "docs", documentation / "docs")
         shutil.copytree(ROOT / "licenses", documentation / "licenses")
         system = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
-        archive = distributions / ("HybridFileXfer-4.0.0-" + system + "-" + platform.machine().lower() + ".zip")
+        archive = distributions / ("HybridFileXfer-4.0.1-" + system + "-" + platform.machine().lower() + ".zip")
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
             for path in image_dir.rglob("*"):
                 if path.is_file():

@@ -42,7 +42,7 @@ Numbers below refer to the upstream assessment, not issues closed by this fork.
 | #84 | Root locale resources and deterministic fallback |
 | #90 | Independent configurable phone and ADB local ports; automatic local allocation |
 | #93, #74 | Process-scoped sessions, foreground notification, lifecycle recovery, background-policy instructions |
-| #112 | Protocol 400 preview docs, commit-identifying build version, reproducible CI packages |
+| #112 | Protocol 401 preview docs, commit-identifying build version, reproducible CI packages |
 | #4, #10, #68 | GUI waits for phone, optional ADB launch request, cancellation/retry, recent directories |
 | #6, #53 | Persistent local summaries and range selection |
 | #2, #21, #25, #50 | Three-platform build/package verification, GUI Windows executable, corrected legacy scripts |
@@ -80,7 +80,7 @@ remaining hardware checks; an unrun check is never reported as passed.
   caret-free read-only output, and the original logo's pixel identity.
   The native Windows save dialog was exercised with cancellation and a synthetic
   Chinese filename; the exported text was read back as UTF-8.
-- Protocol 400 now reports the actual file, direction and assigned byte range
+- Per-channel reporting introduced in protocol 400 includes the actual file, direction and assigned byte range
   for each busy data channel. Loopback regression checks cover both directions,
   resumed ranges, channel failure, cancellation and terminal idle cleanup.
   Android channel-state tests cover terminal-state and late-callback handling;
@@ -95,11 +95,35 @@ remaining hardware checks; an unrun check is never reported as passed.
   remains a real-device acceptance item.
 - Windows packaging verifies all four embedded EXE icon frames against the
   original-logo ICO (16/32/48/256 pixels). Windows native extraction and Shell
-  queries also showed the original logo. The reported old icon was not reproduced
-  for the packaged launcher; legacy source-tree launchers retain generic icons.
-- A local benchmark using one 64 MiB file and 200 x 16 KiB files completed with
+  queries also showed the original logo. Explorer's existing process subsequently
+  reproduced the old blue icon for a previously overwritten extraction path,
+  despite correct embedded resources; per-file Shell notifications did not refresh
+  that cached entry. Extracting build `793af51` to a fresh directory displayed the
+  original logo correctly in Explorer. Legacy source-tree launchers retain generic icons.
+- A local protocol 400 benchmark using one 64 MiB file and 200 x 16 KiB files completed with
   SHA-256 and encryption enabled on 1, 2 and 4 loopback channels, with no failed
   files. It is a software/workload check, not a phone-performance claim.
+
+## Protocol 401 verification changes
+
+SHA-256 is now opt-in on either endpoint and runs after the initial data phase.
+Both endpoints use two hash workers and bounded windows, compare results, then
+retry a completed round's mismatches together. CRC32 checks reuse block buffers
+and combined headers/acknowledgments. Default transfers avoid the deferred-only
+claim/lease writes. See [protocol details](verification-protocol.md).
+
+The new local suites passed 217 verification checks, 20 final-protocol boundary
+checks, 183 staging checks and 12 descriptor-registry checks. These exercise
+block corruption, concurrent hashing, repeated repair, fixed keep-both targets,
+slow peers, stop during hashing/waiting/retry, late descriptors, cross-process
+reservations, and another real transfer over the same connection after soft stop.
+Existing file-protection and reliability suites remain part of the full build.
+
+Real Swing checks add 14 verification-state assertions, including a queued start
+event racing the first verification snapshot, count display, cancellation mode
+and terminal late events. Android's pure Java state suites passed 24 JUnit tests;
+the five locale resource keys/placeholders and layout XML were also checked.
+Full Android compilation/lint and the final commit's CI are recorded in the PR.
 
 ## Remaining device acceptance
 
@@ -119,3 +143,7 @@ remaining hardware checks; an unrun check is never reported as passed.
    the staging file; this must not be treated as successful copying.
 6. Compare single and combined physical channels on the same files/device/disk,
    with and without the experimental ADB option.
+7. Enable SHA on just one endpoint; verify concurrent post-transfer checks and
+   both devices' stop actions, including during repair. Confirm the final counts,
+   preservation of originals and a second transfer without reconnecting. Compare
+   CRC-only throughput against the prior build on the same device and workload.

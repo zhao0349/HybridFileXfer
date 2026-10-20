@@ -21,8 +21,9 @@
     <string name="send_to_local">手机 ← 对端</string>
     <string name="conflict_keep_both">遇到同名文件：保留两份</string>
     <string name="conflict_skip">遇到同名文件：保留已有文件（跳过）</string>
-    <string name="conflict_overwrite">遇到同名文件：校验后替换</string>
-    <string name="verify_sha256">使用 SHA-256 校验传输内容</string>
+    <string name="conflict_overwrite">遇到同名檔案：覆寫</string>
+    <string name="verify_sha256">傳輸後完整 SHA-256 校驗（可選）</string>
+    <string name="verify_sha256_description">任一端勾選即可。校驗較慢，可隨時停止校驗與重試。分塊 CRC32 校驗始終開啟。</string>
     <string name="resume_verified">校验已有前缀后续传中断文件</string>
     <string name="incremental_transfer">内容一致时跳过（增量传输）</string>
     <string name="prescan_transfer">先扫描总量（大目录可能需要较长时间）</string>
@@ -44,4 +45,17 @@
     <string name="transfer_cleanup_warnings">清理警告：%1$d（已完成檔案仍計為成功）</string>
     <string name="channel_task_upload">正在上傳：%1$s\n分塊 %2$d / %3$d</string>
     <string name="channel_task_download">正在下載：%1$s\n分塊 %2$d / %3$d</string>
+    <string name="stop_verification">停止校驗與重試</string>
+    <string name="verification_running">正在並行校驗兩端檔案</string>
+    <string name="verification_waiting_peer">正在等待對端校驗</string>
+    <string name="verification_retrying">正在重傳校驗不一致的檔案</string>
+    <string name="verification_stopping">正在停止校驗與重試……</string>
+    <string name="verification_round_status">第 %1$d 輪 · %2$s</string>
+    <string name="verification_live_counts">通過：%1$d · 失敗：%2$d · 未校驗：%3$d</string>
+    <string name="verification_result_counts">校驗通過：%1$d · 校驗失敗：%2$d · 未校驗：%3$d</string>
+    <string name="verification_retry_counts">校驗輪次：%1$d · 重傳檔案：%2$d</string>
+    <string name="verification_stopped">校驗與重試已停止。</string>
+    <string name="verification_stopped_with_failures">校驗與重試已停止，仍有失敗檔案。</string>
+    <string name="verification_unchecked_note">未校驗檔案不計為校驗通過。</string>
+    <string name="verification_disabled">未啟用完整 SHA-256 校驗，分塊 CRC32 校驗仍開啟。</string>
 </resources>

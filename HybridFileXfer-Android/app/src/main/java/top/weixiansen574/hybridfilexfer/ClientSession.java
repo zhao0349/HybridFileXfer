@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import top.weixiansen574.hybridfilexfer.aidl.IIOService;
 import top.weixiansen574.hybridfilexfer.core.Utils;
+import top.weixiansen574.hybridfilexfer.core.TransferSummary;
+import top.weixiansen574.hybridfilexfer.core.VerificationProgress;
 import top.weixiansen574.hybridfilexfer.core.bean.TrafficInfo;
 import top.weixiansen574.hybridfilexfer.droidcore.DroidHFXClient;
 import top.weixiansen574.hybridfilexfer.tasks.ClientTask;
@@ -32,6 +34,8 @@ public final class ClientSession {
     private int generation;
     private boolean transferRunning;
     private String lastTransferReport = "";
+    private TransferSummary lastTransferSummary;
+    final VerificationUiState verification = new VerificationUiState();
     public boolean active;
     public boolean connecting;
     public String state = "";
@@ -126,6 +130,8 @@ public final class ClientSession {
                 if (!current()) return;
                 transferRunning = true;
                 lastTransferReport = "";
+                lastTransferSummary = null;
+                verification.begin();
                 for (Channel channel : channels.values()) {
                     channel.taskState.begin();
                     channel.event = TransferSession.channelText(context, channel.taskState);
@@ -141,15 +147,18 @@ public final class ClientSession {
             }
             @Override public void onExit() { if (current()) stop(); }
             @Override public void onFileUploading(String name, String path, long size, long total) {
+                if (!verification.transferringData()) return;
                 Channel channel = channel(name);
                 if (channel != null && channel.taskState.taskEndingAt(path, true, size, total)) updateChannel(channel);
             }
             @Override public void onFileDownloading(String name, String path, long size, long total) {
+                if (!verification.transferringData()) return;
                 Channel channel = channel(name);
                 if (channel != null && channel.taskState.taskEndingAt(path, false, size, total)) updateChannel(channel);
             }
             @Override public void onChannelTask(String name, String path, boolean upload,
                                                 long offset, long length, long fileSize) {
+                if (!verification.transferringData()) return;
                 Channel channel = channel(name);
                 if (channel != null && channel.taskState.task(path, upload, offset, length, fileSize)) {
                     updateChannel(channel);
@@ -165,7 +174,8 @@ public final class ClientSession {
                     Channel channel = channels.get(info.iName);
                     if (channel != null) {
                         boolean finished = channel.taskState.kind() == ChannelTaskState.Kind.COMPLETE
-                                || channel.taskState.kind() == ChannelTaskState.Kind.ERROR;
+                                || channel.taskState.kind() == ChannelTaskState.Kind.ERROR
+                                || !verification.transferringData();
                         channel.uploadSpeed = finished ? 0 : info.uploadTraffic;
                         channel.downloadSpeed = finished ? 0 : info.downloadTraffic;
                     }
@@ -195,15 +205,36 @@ public final class ClientSession {
                 state((upload ? "↑ " : "↓ ") + Utils.formatFileSize(traffic) + " · " + Utils.formatTime(time)
                         + "\n" + lastTransferReport);
             }
+            @Override public void onVerificationStopped(boolean upload, long traffic, long time) {
+                if (!current() || !transferRunning) return;
+                endTransfer();
+                state(TransferSession.verificationStoppedText(context, lastTransferSummary) + "\n"
+                        + (upload ? "↑ " : "↓ ") + Utils.formatFileSize(traffic) + " · " + Utils.formatTime(time)
+                        + "\n" + lastTransferReport);
+            }
             @Override public void onProgress(top.weixiansen574.hybridfilexfer.core.TransferProgress progress) {
-                if (current() && transferRunning) state(Utils.formatFileSize(progress.transferredBytes) + " / "
+                if (current() && transferRunning && !verification.active()) state(Utils.formatFileSize(progress.transferredBytes) + " / "
                         + (progress.totalBytes < 0 ? "?" : Utils.formatFileSize(progress.totalBytes))
                         + " · " + progress.completedFiles + " / " + (progress.totalFiles < 0 ? "?" : progress.totalFiles)
                         + "\n" + progress.currentPath);
             }
-            @Override public void onPhase(String phase) { if (current() && transferRunning) state(phase); }
+            @Override public void onPhase(String phase) {
+                if (current() && transferRunning && !verification.active()) state(phase);
+            }
+            @Override public void onVerificationProgress(VerificationProgress progress) {
+                if (!current() || !transferRunning || !verification.update(progress)) return;
+                if (!"retrying".equals(progress.phase)) {
+                    for (Channel channel : channels.values()) {
+                        channel.taskState.idle();
+                        channel.event = TransferSession.channelText(context, channel.taskState);
+                        channel.uploadSpeed = channel.downloadSpeed = 0;
+                    }
+                }
+                state(TransferSession.verificationText(context, progress, verification.stopping()));
+            }
             @Override public void onSummary(top.weixiansen574.hybridfilexfer.core.TransferSummary summary) {
                 if (!current() || !transferRunning) return;
+                lastTransferSummary = summary;
                 lastTransferReport = TransferSession.formatSummary(context, summary);
                 LocalHistory.transfer(context, lastTransferReport);
             }
@@ -222,11 +253,18 @@ public final class ClientSession {
 
     private void endTransfer() {
         transferRunning = false;
+        verification.finish();
         for (Channel channel : channels.values()) {
             channel.taskState.end();
             channel.event = TransferSession.channelText(context, channel.taskState);
             channel.uploadSpeed = channel.downloadSpeed = 0;
         }
+    }
+
+    public void stopVerification() {
+        if (!active || !transferRunning || client == null || !verification.requestStop()) return;
+        client.stopVerification();
+        state(TransferSession.verificationText(context, verification.progress(), true));
     }
 
     private void fail(String message) { stop(); state(message); }

@@ -108,6 +108,9 @@ public final class DesktopVisualSmokeTest {
                     throw new AssertionError("Transfer stop actions are unavailable");
                 render(frame, destination.resolveSibling("ui-minimum-transfer.png"));
                 DesktopInteractionChecks.verifyThemes(desktop, frame, destination.getParent(), "transfer");
+                DesktopVerificationChecks.verify(desktop);
+                frame.validate();
+                render(frame, destination.resolveSibling("ui-verification.png"));
                 Field active = DesktopApp.class.getDeclaredField("transferActive");
                 active.setAccessible(true); active.set(desktop, false);
                 frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));

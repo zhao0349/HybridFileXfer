@@ -30,6 +30,7 @@ public class TransferDialog {
     private final android.widget.ProgressBar progressBar;
     private final TextView progressText;
     private Runnable cancel;
+    private boolean verificationMode;
 
 
     public TransferDialog(Context context, boolean isUpload, List<String> channelNames) {
@@ -91,6 +92,7 @@ public class TransferDialog {
                 totalDownloadSpeed += trafficInfo.downloadTraffic;
             }
         }
+        if (verificationMode) return;
         if (isUpload) {
             dialog.setTitle(context.getString(R.string.uploading_speed,
                     ((float) totalUploadSpeed) / 1024 / 1024));
@@ -115,6 +117,7 @@ public class TransferDialog {
     public void setOnCancel(Runnable cancel) { this.cancel = cancel; }
 
     public void showProgress(top.weixiansen574.hybridfilexfer.core.TransferProgress progress, String phase) {
+        verificationMode = false;
         if (progress == null) {
             progressBar.setIndeterminate(true);
             progressText.setText(phase);
@@ -131,6 +134,23 @@ public class TransferDialog {
         progressText.setText(Utils.formatFileSize(progress.transferredBytes) + " / " + total + " · "
                 + progress.completedFiles + " / " + count + "\n"
                 + (progress.currentPath == null ? "" : progress.currentPath) + "\n" + phase);
+    }
+
+    public void showVerification(top.weixiansen574.hybridfilexfer.core.VerificationProgress progress,
+                                 boolean stopping) {
+        verificationMode = true;
+        dialog.setTitle(TransferSession.verificationPhase(context, progress, stopping));
+        Button stop = dialog.getButton(DialogInterface.BUTTON_NEGATIVE);
+        stop.setText(R.string.stop_verification);
+        stop.setEnabled(!stopping);
+        progressBar.setIndeterminate(progress.totalFiles == 0
+                || "retrying".equals(progress.phase) || stopping);
+        if (!progressBar.isIndeterminate()) {
+            progressBar.setMax(1000);
+            progressBar.setProgress((int) Math.min(1000,
+                    progress.checkedFiles * 1000.0 / progress.totalFiles));
+        }
+        progressText.setText(TransferSession.verificationText(context, progress, stopping));
     }
 
     public void showResult(String result) {

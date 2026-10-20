@@ -17,5 +17,15 @@ interface IIOService {
     boolean mkdirs(String path) = 9;
     boolean isFile(String path) = 10;
     String getFileParent(String path) = 11;
+    String[] describeTransferFile(String path) = 20;
+    ParcelFileDescriptor openTransferSource(String path) = 21;
+    String[] prepareTransferFile(String root, String relative, String identity, long size, long modified,
+        String hash, int policy, boolean resume, boolean incremental) = 22;
+    ParcelFileDescriptor openTransferStage(String token) = 23;
+    String checkpointTransferFile(String token, long offset) = 24;
+    String commitTransferFile(String token, boolean verifySha256) = 25;
+    String abandonTransferFile(String token, boolean keep) = 26;
+    String createTransferDirectory(String root, String relative, long modified) = 27;
+    String[] canonicalTransferPath(String path) = 28;
     void destroy() = 16777114;
 }

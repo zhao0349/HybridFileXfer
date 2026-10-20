@@ -60,8 +60,14 @@ def main():
     jar_dir = BUILD / "jar"
     jar_dir.mkdir(parents=True, exist_ok=True)
     jar_path = jar_dir / "HybridFileXfer.jar"
-    run([java_tool("jar"), "cfe", jar_path,
-         "top.weixiansen574.hybridfilexfer.Main", "-C", classes, "."])
+    revision = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT,
+                              text=True, stdout=subprocess.PIPE, check=True).stdout.strip()
+    manifest = BUILD / "MANIFEST.MF"
+    manifest.write_text("Manifest-Version: 1.0\n"
+                        "Main-Class: top.weixiansen574.hybridfilexfer.Main\n"
+                        "Implementation-Version: 4.0.0-preview+" + revision + "\n\n",
+                        encoding="utf-8")
+    run([java_tool("jar"), "cfm", jar_path, manifest, "-C", classes, "."])
     run([java_tool("java"), "-jar", jar_path, "--version"], timeout=20)
     run([java_tool("java"), "-jar", jar_path, "--help"], timeout=20)
     if args.test:
@@ -113,6 +119,11 @@ def main():
              "--input", jar_dir, "--main-jar", jar_path.name, "--dest", image_dir,
              "--app-version", "4.0.0", "--vendor", "HybridFileXfer contributors",
              "--java-options", "-Dfile.encoding=UTF-8"])
+        documentation = image_dir / "Documentation"
+        documentation.mkdir()
+        for path in (ROOT / "LICENSE", ROOT / "README.md", ROOT / "HybridFileXfer-PC/DESKTOP.md"):
+            if path.is_file():
+                shutil.copy2(path, documentation / path.name)
         platform = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
         archive = distributions / ("HybridFileXfer-4.0.0-" + platform + ".zip")
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:

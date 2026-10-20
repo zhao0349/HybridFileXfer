@@ -5,6 +5,10 @@ import java.util.List;
 import top.weixiansen574.hybridfilexfer.core.bean.TrafficInfo;
 
 public interface TransferFileCallback {
+    default void onProgress(top.weixiansen574.hybridfilexfer.core.TransferProgress progress) {}
+    default void onFileResult(String path, String status, String message) {}
+    default void onPhase(String phase) {}
+    default void onSummary(top.weixiansen574.hybridfilexfer.core.TransferSummary summary) {}
     int ERROR_TYPE_EXCEPTION = 1;
     int ERROR_TYPE_INTERRUPT = 2;
     int ERROR_TYPE_READ_ERROR = 3;

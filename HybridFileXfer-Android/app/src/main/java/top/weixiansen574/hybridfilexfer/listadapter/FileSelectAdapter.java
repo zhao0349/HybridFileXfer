@@ -48,6 +48,7 @@ public abstract class FileSelectAdapter extends RecyclerView.Adapter<FileSelectA
     public Toolbar fileSelectToolbar;
     View.OnTouchListener onTouchListener;
     private int lastSelectedCount = 0;
+    private int selectionAnchor = -1;
     private OnConfirmFileSelectionListener onConfirmFileSelectionListener;
     private LinkedList<DirPosition> positions = new LinkedList<>();
     private final int fileSystem;
@@ -189,17 +190,19 @@ public abstract class FileSelectAdapter extends RecyclerView.Adapter<FileSelectA
         }
 
         itemView.setOnLongClickListener(v -> {
-            if (!isSelectMode()) {
-                if (!selectedItems.contains(item)) {
-                    addSelectItem(item);
-                } else {
-                    removeSelectItem(item);
+            int index = holder.getBindingAdapterPosition();
+            if (index <= 0) return true;
+            if (selectionAnchor > 0 && isSelectMode()) {
+                for (int i = Math.min(selectionAnchor, index); i <= Math.max(selectionAnchor, index); i++) {
+                    selectedItems.add(files.get(i));
                 }
-                notifyItemChanged(holder.getAdapterPosition());
+                updateSelectedCount();
+                notifyDataSetChanged();
             } else {
-                if (selectedItems.contains(item)) {
-                    onConfirmFileSelection(selectedItems);
-                }
+                selectionAnchor = index;
+                addSelectItem(item);
+                notifyItemChanged(index);
+                Toast.makeText(context, R.string.range_selection_hint, Toast.LENGTH_SHORT).show();
             }
             return true;
         });
@@ -272,7 +275,12 @@ public abstract class FileSelectAdapter extends RecyclerView.Adapter<FileSelectA
     @SuppressLint("NotifyDataSetChanged")
     protected void changeFiles(List<RemoteFile> files) {
         loadingView.setVisibility(View.GONE);
+        selectedItems.clear();
+        selectionAnchor = -1;
+        updateSelectedCount();
         this.files = files;
+        top.weixiansen574.hybridfilexfer.LocalHistory.directory(context,
+                this instanceof RemoteFileSelectAdapter, getCurrentDir());
         notifyDataSetChanged();
         recyclerView.setVisibility(View.VISIBLE);
         recyclerView.scheduleLayoutAnimation();
@@ -401,6 +409,7 @@ public abstract class FileSelectAdapter extends RecyclerView.Adapter<FileSelectA
     @SuppressLint("NotifyDataSetChanged")
     public void cancelSelect() {
         selectedItems.clear();
+        selectionAnchor = -1;
         updateSelectedCount();
         notifyDataSetChanged();
     }
@@ -409,9 +418,17 @@ public abstract class FileSelectAdapter extends RecyclerView.Adapter<FileSelectA
     public void selectAll() {
         selectedItems.clear();
         selectedItems.addAll(files);
-        selectedItems.remove(files.get(0));//排除”..“文件夹
+        if (!files.isEmpty()) selectedItems.remove(files.get(0));//排除”..“文件夹
         updateSelectedCount();
         notifyDataSetChanged();
+    }
+
+    public void confirmSelection() {
+        if (selectedItems.isEmpty()) {
+            Toast.makeText(context, R.string.select_files_first, Toast.LENGTH_LONG).show();
+            return;
+        }
+        onConfirmFileSelection(selectedItems);
     }
 
     public String getCurrentDir() {
@@ -468,7 +485,9 @@ public abstract class FileSelectAdapter extends RecyclerView.Adapter<FileSelectA
 
     @Override
     public CharSequence getSectionText(int position) {
-        return String.valueOf(files.get(position).getName().charAt(0));
+        if (position < 0 || position >= files.size()) return "";
+        String name = files.get(position).getName();
+        return name.isEmpty() ? "" : name.substring(0, 1);
     }
 
 

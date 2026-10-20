@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="root_direct_su">Root（su を直接使用）</string>
+    <string name="io_start_timeout">I/O サービスの起動がタイムアウトしました。権限を確認して再試行してください。</string>
+    <string name="root_access_denied">Root を利用できないか、権限が拒否されました。su 管理アプリで許可するか、別のモードを選択してください。</string>
+    <string name="io_start_failed">I/O サービスを起動できません。モードと権限を確認してください。</string>
+    <string name="io_disconnected">I/O サービスが切断されました。新しいセッションを開始できます。</string>
+    <string name="session_notification_title">HybridFileXfer セッション</string>
+    <string name="session_notification_message">ファイル転送サービスは実行中です。タップして戻るか、ここで停止できます。</string>
+    <string name="pairing_code">ペアリングコード</string>
+    <string name="server_port">サーバーポート（1024–65535）</string>
+    <string name="invalid_connection_settings">ペアリングコードとポート（1024–65535）を確認してください。</string>
+    <string name="confirm_start_title">ファイル転送セッションを開始しますか？</string>
+    <string name="confirm_start_description">ペアリングコードは接続先の相手だけに共有してください。実行中は通知が表示されます。終了後はサービスを停止してください。バッテリー制限、強制停止、ネットワークの変更で転送が中断される場合があります。フォアグラウンドサービスでも完了を保証できません。</string>
+    <string name="session_already_running">セッションは既に実行中です。ペアリングコードは変更されません。先に現在のセッションを停止してください。</string>
+    <string name="no_active_session">実行中のセッションはありません。メイン画面から接続してください。</string>
+    <string name="confirm_stop_session">このセッションを停止しますか？進行中の転送は中断されます。</string>
+    <string name="range_selection_hint">別の項目を長押しすると範囲を選択できます。方向ボタンで転送してください。</string>
+    <string name="select_files_first">ファイルまたはフォルダーを長押しして選択してください。</string>
+    <string name="send_to_remote">スマートフォン → 相手</string>
+    <string name="send_to_local">スマートフォン ← 相手</string>
+    <string name="conflict_keep_both">同名ファイルがある場合：両方を保持</string>
+    <string name="conflict_skip">同名ファイルがある場合：既存を保持（スキップ）</string>
+    <string name="conflict_overwrite">同名ファイルがある場合：検証後に置換</string>
+    <string name="verify_sha256">SHA-256 で転送内容を検証</string>
+    <string name="resume_verified">既存の先頭部分を検証して中断したファイルを再開</string>
+    <string name="incremental_transfer">内容が一致するファイルをスキップ</string>
+    <string name="prescan_transfer">先に合計をスキャン（大きなフォルダーでは時間がかかります）</string>
+    <string name="cancel_transfer">転送をキャンセル</string>
+    <string name="cancelling_transfer">キャンセル中…</string>
+    <string name="transfer_cancelled">転送がキャンセルされました</string>
+    <string name="transfer_result_counts">完了：%1$d · スキップ：%2$d · 失敗：%3$d</string>
+    <string name="transfer_already_running">転送は既に進行中です。</string>
+    <string name="recent_directories">最近のフォルダー</string>
+    <string name="storage_locations">ストレージの場所</string>
+    <string name="transfer_history">転送履歴（この端末のみ）</string>
+    <string name="history_empty">履歴はありません。</string>
+    <string name="clear_history">端末内の履歴を消去</string>
+    <string name="transfer_finished">転送が終了しました</string>
+    <string name="connection_channels">接続チャネル</string>
+    <string name="session_changed">接続が変更されました。メイン画面に戻り、ファイルブラウザーを開き直してください。</string>
+    <string name="return_to_main">メイン画面に戻る</string>
+</resources>

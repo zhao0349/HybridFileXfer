@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="root_direct_su">Root (direct su)</string>
+    <string name="io_start_timeout">I/O service startup timed out. Check authorization and try again.</string>
+    <string name="root_access_denied">Root is unavailable or authorization was denied. Grant this app access in your su manager, or choose another mode.</string>
+    <string name="io_start_failed">Unable to start the I/O service. Check the selected mode and authorization.</string>
+    <string name="io_disconnected">The I/O service disconnected. You can start a new session.</string>
+    <string name="session_notification_title">HybridFileXfer session</string>
+    <string name="session_notification_message">File transfer service is active. Tap to return or stop it here.</string>
+    <string name="pairing_code">Pairing code</string>
+    <string name="server_port">Server port (1024–65535)</string>
+    <string name="invalid_connection_settings">Check the pairing code and port (1024–65535).</string>
+    <string name="confirm_start_title">Start a file transfer session?</string>
+    <string name="confirm_start_description">Only share the pairing code with the intended peer. A foreground notification keeps the session visible. Stop it when finished. Battery restrictions, force-stop, and network changes can still interrupt transfers; a foreground service cannot guarantee completion.</string>
+    <string name="session_already_running">A session is already running. Its pairing code is unchanged. Stop it before starting another.</string>
+    <string name="no_active_session">No active session. Connect from the main screen.</string>
+    <string name="confirm_stop_session">Stop this session? Any current transfer will be interrupted.</string>
+    <string name="range_selection_hint">Long-press another item to select the range. Use the direction button to transfer.</string>
+    <string name="select_files_first">Long-press a file or folder to select it first.</string>
+    <string name="send_to_remote">Phone → Peer</string>
+    <string name="send_to_local">Phone ← Peer</string>
+    <string name="conflict_keep_both">If a name exists: keep both</string>
+    <string name="conflict_skip">If a name exists: keep existing (skip)</string>
+    <string name="conflict_overwrite">If a name exists: replace after verification</string>
+    <string name="verify_sha256">Verify transferred contents with SHA-256</string>
+    <string name="resume_verified">Resume interrupted files after verifying the existing prefix</string>
+    <string name="incremental_transfer">Skip files only when contents match</string>
+    <string name="prescan_transfer">Scan totals first (may take time for large folders)</string>
+    <string name="cancel_transfer">Cancel transfer</string>
+    <string name="cancelling_transfer">Cancelling…</string>
+    <string name="transfer_cancelled">Transfer cancelled</string>
+    <string name="transfer_result_counts">Completed: %1$d · Skipped: %2$d · Failed: %3$d</string>
+    <string name="transfer_already_running">A transfer is already running.</string>
+    <string name="recent_directories">Recent folders</string>
+    <string name="storage_locations">Storage locations</string>
+    <string name="transfer_history">Transfer history (on this device)</string>
+    <string name="history_empty">No history yet.</string>
+    <string name="clear_history">Clear local history</string>
+    <string name="transfer_finished">Transfer finished</string>
+    <string name="connection_channels">Connection channels</string>
+    <string name="session_changed">The connection changed. Return to the main screen and reopen the file browser.</string>
+    <string name="return_to_main">Return to main screen</string>
+</resources>

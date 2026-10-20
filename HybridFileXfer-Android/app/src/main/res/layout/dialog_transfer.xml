@@ -10,6 +10,10 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:layout_marginHorizontal="12dp">
+        <ProgressBar android:id="@+id/transfer_progress" style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:indeterminate="true" />
+        <TextView android:id="@+id/transfer_progress_text" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:paddingVertical="8dp" android:textIsSelectable="true" />
 
     </LinearLayout>
 

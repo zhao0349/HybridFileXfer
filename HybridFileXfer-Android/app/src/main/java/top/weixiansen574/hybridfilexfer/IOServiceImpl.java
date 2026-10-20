@@ -25,6 +25,67 @@ interface IIOService {
 }
 */
 public class IOServiceImpl extends IIOService.Stub {
+    private final top.weixiansen574.hybridfilexfer.core.LocalTransferFileAccess transferFiles =
+            new top.weixiansen574.hybridfilexfer.core.LocalTransferFileAccess() {
+                @Override protected void atomicMove(File source, File target, boolean replace) throws IOException {
+                    try {
+                        if (replace) android.system.Os.rename(source.getPath(), target.getPath());
+                        else NativeMemory.moveNoReplace(source.getPath(), target.getPath());
+                    } catch (android.system.ErrnoException e) { throw new IOException(e); }
+                }
+            };
+
+    public String[] describeTransferFile(String path) {
+        try {
+            top.weixiansen574.hybridfilexfer.core.bean.RemoteFile file = transferFiles.stat(path);
+            return new String[]{file.getName(), file.getPath(), Long.toString(file.lastModified()),
+                    Long.toString(file.getSize()), Boolean.toString(file.isDirectory())};
+        } catch (IOException e) { return new String[]{e.toString()}; }
+    }
+    public String[] canonicalTransferPath(String path) {
+        try { return new String[]{transferFiles.canonicalPath(path), ""}; }
+        catch (IOException e) { return new String[]{"",e.toString()}; }
+    }
+    public ParcelFileDescriptor openTransferSource(String path) {
+        try {
+            if (transferFiles.stat(path).isDirectory()) return null;
+            return ParcelFileDescriptor.open(new File(path), ParcelFileDescriptor.MODE_READ_ONLY);
+        } catch (IOException e) { return null; }
+    }
+    public String[] prepareTransferFile(String root, String relative, String identity, long size, long modified,
+                                        String hash, int policy, boolean resume, boolean incremental) {
+        try {
+            top.weixiansen574.hybridfilexfer.core.TransferOptions options = new top.weixiansen574.hybridfilexfer.core.TransferOptions();
+            options.conflictPolicy = top.weixiansen574.hybridfilexfer.core.TransferOptions.ConflictPolicy.values()[policy];
+            options.resume = resume; options.incremental = incremental;
+            return transferFiles.prepare(root, relative, identity, size, modified, hash, options).encode();
+        } catch (IOException | RuntimeException e) {
+            top.weixiansen574.hybridfilexfer.core.TransferFileAccess.Prepared p =
+                    new top.weixiansen574.hybridfilexfer.core.TransferFileAccess.Prepared();
+            p.status = "failed"; p.message = e.toString();
+            return p.encode();
+        }
+    }
+    public ParcelFileDescriptor openTransferStage(String token) {
+        try { return ParcelFileDescriptor.open(new File(transferFiles.stagingPath(token)), ParcelFileDescriptor.MODE_READ_WRITE); }
+        catch (IOException e) { return null; }
+    }
+    public String checkpointTransferFile(String token, long offset) {
+        try { transferFiles.checkpoint(token, offset); return null; }
+        catch (IOException e) { return e.toString(); }
+    }
+    public String commitTransferFile(String token, boolean verifySha256) {
+        try { transferFiles.commit(token, verifySha256); return null; }
+        catch (IOException e) { return e.toString(); }
+    }
+    public String abandonTransferFile(String token, boolean keep) {
+        try { transferFiles.abandon(token, keep); return null; }
+        catch (IOException e) { return e.toString(); }
+    }
+    public String createTransferDirectory(String root, String relative, long modified) {
+        try { transferFiles.createDirectory(root, relative, modified); return null; }
+        catch (IOException e) { return e.toString(); }
+    }
     //由于Parcel的限制，传输太大的文件列表信息会直接崩，所以要分块
     public static final int CHUNK_SIZE = 1000;
     private final AtomicInteger localFileListSliceId = new AtomicInteger(1);

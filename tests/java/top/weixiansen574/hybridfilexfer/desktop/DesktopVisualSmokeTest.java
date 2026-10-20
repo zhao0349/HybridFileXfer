@@ -50,7 +50,13 @@ public final class DesktopVisualSmokeTest {
                 assertVisible((JComponent) field(desktop, "cancelTransfer"), "Cancel in small window");
                 assertVisible((JComponent) field(desktop, "reconnect"), "Reconnect preference in small window");
                 assertVisible((JComponent) field(desktop, "launchPhone"), "Phone launch preference in small window");
+                JSpinner serverPort = (JSpinner) field(desktop, "port");
+                assertSpinnerText(serverPort);
                 render(frame, destination.resolveSibling("ui-minimum.png"));
+                serverPort.setValue(65535); frame.validate();
+                assertSpinnerText(serverPort);
+                render(frame, destination.resolveSibling("ui-maximum-port.png"));
+                serverPort.setValue(5740);
                 JScrollPane content = (JScrollPane) field(desktop, "contentScroll");
                 content.getVerticalScrollBar().setValue(content.getVerticalScrollBar().getMaximum());
                 render(frame, destination.resolveSibling("ui-minimum-bottom.png"));
@@ -153,5 +159,12 @@ public final class DesktopVisualSmokeTest {
             }
         }
         return null;
+    }
+    private static void assertSpinnerText(JSpinner spinner) {
+        JFormattedTextField editor = ((JSpinner.NumberEditor) spinner.getEditor()).getTextField();
+        Insets insets = editor.getInsets();
+        int width = editor.getWidth() - insets.left - insets.right;
+        if (editor.getFontMetrics(editor.getFont()).stringWidth(editor.getText()) > width)
+            throw new AssertionError("Port text is clipped: " + editor.getText() + " in " + width + "px");
     }
 }

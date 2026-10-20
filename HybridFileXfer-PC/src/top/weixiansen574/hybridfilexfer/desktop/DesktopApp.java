@@ -130,6 +130,8 @@ public final class DesktopApp {
         localPort.setEditor(new JSpinner.NumberEditor(localPort, "0"));
         ((JSpinner.NumberEditor) port.getEditor()).getTextField().setColumns(6);
         ((JSpinner.NumberEditor) localPort.getEditor()).getTextField().setColumns(6);
+        ((JSpinner.NumberEditor) port.getEditor()).getTextField().setHorizontalAlignment(JTextField.LEFT);
+        ((JSpinner.NumberEditor) localPort.getEditor()).getTextField().setHorizontalAlignment(JTextField.LEFT);
         port.setPreferredSize(new Dimension(100, 28));
         localPort.setPreferredSize(new Dimension(100, 28));
         directory.setPreferredSize(new Dimension(390, 28));
@@ -258,8 +260,8 @@ public final class DesktopApp {
         address.setPreferredSize(new Dimension(320, 38));
         directory.setPreferredSize(new Dimension(290, 38));
         pairing.setPreferredSize(new Dimension(200, 38));
-        port.setPreferredSize(new Dimension(100, 38));
-        localPort.setPreferredSize(new Dimension(100, 38));
+        port.setPreferredSize(new Dimension(112, 38));
+        localPort.setPreferredSize(new Dimension(112, 38));
         directory.putClientProperty("JTextField.placeholderText", text("选择电脑上的文件夹", "Choose a computer folder"));
         address.putClientProperty("JTextField.placeholderText", "192.168.1.100");
         pairing.putClientProperty("JTextField.placeholderText", text("ADB 自动配对，或输入手机上的配对码", "ADB pairing, or the code shown on your phone"));
@@ -417,7 +419,8 @@ public final class DesktopApp {
         row(panel, 3, text("ADB 本地端口", "Local ADB port"), line(localPort, label(text("0 = 自动分配", "0 = automatic"), 12f, false, MUTED)));
         JSpinner phonePort = new JSpinner(port.getModel());
         phonePort.setEditor(new JSpinner.NumberEditor(phonePort, "0"));
-        phonePort.setPreferredSize(new Dimension(100, 38));
+        ((JSpinner.NumberEditor) phonePort.getEditor()).getTextField().setHorizontalAlignment(JTextField.LEFT);
+        phonePort.setPreferredSize(new Dimension(112, 38));
         row(panel, 4, text("手机服务端口", "Phone service port"), phonePort);
         row(panel, 5, "", burst);
         row(panel, 6, "", label(text("实验选项仅影响本程序启动的 ADB 进程。", "The experimental option only affects this app's ADB processes."), 12f, false, MUTED));

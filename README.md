@@ -44,6 +44,12 @@ ADB 自动配对通过手机已授权的 ADB shell 读取当前会话，不在�
 
 手机服务端口可配置（默认 5740）。ADB 本地端口默认自动分配，避免 Windows 保留端口冲突，仅移除本应用创建的转发规则。ADB Burst Mode 是可选实验项，不会强制重启全局 ADB 服务；其效果需要用目标设备测试。
 
+## Canary 预发布
+
+可从本仓库 [Releases](https://github.com/zhao0349/HybridFileXfer/releases) 下载 canary 预发布版。桌面与 Android 必须使用同一次发布的产物；桌面 ZIP 自带 Java，Android APK 为调试签名。安装签名不同时不能直接覆盖安装，卸载会清除应用设置。
+
+维护者在 `main` 上手动运行 `Build and verify`，勾选 `canary`，即可在 Windows、Linux、macOS 和 Android 的全部构建检查通过后发布。版本标签包含 UTC 日期、工作流运行编号和重试编号；发布不标记为 Latest。`SHA256SUMS.txt` 用于核对下载，`BUILD-INFO.json` 记录源码提交、构建链接和各产物摘要。应用内版本仍为 `4.0.1-preview`，桌面 `--version` 同时显示提交号。真实手机、权限模式和显示缩放仍需实机验收。
+
 ## 从源码构建
 
 桌面使用 JDK 21 或更新版本和 Python 3.9 或更新版本：

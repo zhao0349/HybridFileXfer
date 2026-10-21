@@ -1,6 +1,11 @@
 name: Build and verify
 on:
   workflow_dispatch:
+    inputs:
+      canary:
+        description: Publish a canary prerelease after all checks pass (main only)
+        type: boolean
+        default: false
   push:
     branches: ['main']
   pull_request:
@@ -42,6 +47,34 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: dotnet build HybridFileXferLauncher/HybridFileXferLauncher.csproj --configuration Release
+  canary:
+    if: github.event_name == 'workflow_dispatch' && inputs.canary && github.ref == 'refs/heads/main'
+    needs: [desktop, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          path: .build/canary-input
+      - name: Prepare verified release assets
+        run: python tools/prepare_canary.py
+      - name: Publish canary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=$(cat .build/canary-tag.txt)
+          gh release create "$tag" --target "$GITHUB_SHA" --title "HybridFileXfer $tag" --notes-file .build/canary-notes.md --prerelease --draft .build/canary-release/*
+          gh release edit "$tag" --draft=false --latest=false
   android:
     runs-on: ubuntu-24.04
     steps:
